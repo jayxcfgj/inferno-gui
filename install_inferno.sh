@@ -379,9 +379,18 @@ step_build_statime_inferno() {
     run_cmd "cd \"$WORK_DIR\""
     
     log_info "Cloning statime (inferno-dev branch)..."
+    # Remove existing directory to allow clean clone
+    if [ "$TEST_MODE" = false ] && [ -d "$STATIME_DIR" ]; then
+        log_info "Removing existing statime directory..."
+        rm -rf "$STATIME_DIR"
+    fi
     run_cmd "git clone --recurse-submodules -b inferno-dev https://github.com/teodly/statime \"$STATIME_DIR\""
     
     log_info "Cloning inferno..."
+    if [ "$TEST_MODE" = false ] && [ -d "$INFERNO_DIR" ]; then
+        log_info "Removing existing inferno directory..."
+        rm -rf "$INFERNO_DIR"
+    fi
     run_cmd "git clone --recursive https://github.com/teodly/inferno \"$INFERNO_DIR\""
     
     log_step "Building statime..."
