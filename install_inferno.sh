@@ -704,7 +704,7 @@ EOF
 step_configure_pipewire() {
     log_step "Step 11: Configuring PipeWire for inferno"
     
-    local override_dir="$HOME/.config/systemd/user/pipewire.service.d"
+    local override_dir="$ACTUAL_HOME/.config/systemd/user/pipewire.service.d"
     local override_file="$override_dir/override.conf"
     
     run_cmd "mkdir -p \"$override_dir\""
@@ -714,14 +714,29 @@ step_configure_pipewire() {
 SystemCallFilter=@clock
 EOF
     
+    # Fix ownership if running as root
+    if [ "$TEST_MODE" = false ] && [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+        chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$ACTUAL_HOME/.config/systemd/user/pipewire.service.d" 2>/dev/null || true
+    fi
+    
     log_success "Created PipeWire override: $override_file"
     
     if [ "$TEST_MODE" = false ]; then
-        log_info "Restarting PipeWire services..."
-        run_cmd "systemctl --user restart pipewire"
-        run_cmd "systemctl --user restart wireplumber"
+        log_info "Restarting PipeWire services (as user $SUDO_USER_VAL)..."
+        if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+            # Run systemctl --user as the actual user
+            run_cmd_sudo "sudo -u $SUDO_USER_VAL XDG_RUNTIME_DIR=/run/user/$(id -u $SUDO_USER_VAL) systemctl --user restart pipewire"
+            run_cmd_sudo "sudo -u $SUDO_USER_VAL XDG_RUNTIME_DIR=/run/user/$(id -u $SUDO_USER_VAL) systemctl --user restart wireplumber"
+        else
+            run_cmd "systemctl --user restart pipewire"
+            run_cmd "systemctl --user restart wireplumber"
+        fi
         sleep 2
-        run_cmd "systemctl --user status pipewire --no-pager"
+        if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+            run_cmd_sudo "sudo -u $SUDO_USER_VAL XDG_RUNTIME_DIR=/run/user/$(id -u $SUDO_USER_VAL) systemctl --user status pipewire --no-pager"
+        else
+            run_cmd "systemctl --user status pipewire --no-pager"
+        fi
     else
         log_info "[DRY-RUN] Would restart PipeWire services"
     fi
