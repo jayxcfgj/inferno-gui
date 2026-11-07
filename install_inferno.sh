@@ -275,7 +275,8 @@ step_pipewire() {
         pw_version="0.3"
         log_info "[TEST MODE] Simulating PipeWire version: $pw_version"
     else
-        pw_version=$(pipewire --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        # Search all output lines for version pattern (version is on line 2/3, not line 1)
+        pw_version=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
     fi
     
     if [ -z "$pw_version" ]; then
@@ -336,7 +337,7 @@ step_pipewire() {
         new_version="1.2"
         log_info "[TEST MODE] Simulating PipeWire version: $new_version"
     else
-        new_version=$(pipewire --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        new_version=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
     fi
     log_success "PipeWire updated to version: $new_version"
 }
