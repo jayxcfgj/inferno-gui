@@ -887,7 +887,7 @@ step_optional_netaudio() {
                 log_warn "Rust/Cargo not found. Installing Rust toolchain for user $SUDO_USER_VAL..."
                 if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
                     run_cmd_sudo "sudo -u $SUDO_USER_VAL curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
-                    run_cmd_sudo "sudo -u $SUDO_USER_VAL source "$ACTUAL_HOME/.cargo/env" && export PATH="$ACTUAL_HOME/.cargo/bin:\$PATH""
+                    run_cmd_sudo "sudo -u $SUDO_USER_VAL bash -c 'source "$ACTUAL_HOME/.cargo/env" && export PATH="$ACTUAL_HOME/.cargo/bin:\$PATH"'"
                     export PATH="$ACTUAL_HOME/.cargo/bin:$PATH"
                 else
                     run_cmd "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
