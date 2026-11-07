@@ -630,7 +630,8 @@ step_install_alsa_plugin() {
     if [ "$TEST_MODE" = true ]; then
         run_cmd "aplay -L | grep -i inferno"
     else
-        run_cmd "aplay -L | grep -i inferno"
+        # grep returns 1 if no matches, don't fail script
+        run_cmd "aplay -L | grep -i inferno || true"
     fi
     
     # Test plugin listing
