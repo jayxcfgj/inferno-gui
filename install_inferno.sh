@@ -753,26 +753,27 @@ step_optional_netaudio() {
     fi
     
     log_info "netaudio installation options:"
-    echo "  1) Install via cargo (from source)"
-    echo "  2) Download pre-built binary (if available)"
-    echo "  3) Install via package manager (if packaged)"
+    echo "  1) Install via pip (pre-built Linux wheel from GitHub releases)"
+    echo "  2) Build from source (requires Rust)"
+    echo "  3) Skip installation"
     
     local choice
-    choice=$(prompt_select "Select installation method:" "cargo (from source)" "Download binary" "Package manager")
+    choice=$(prompt_select "Select installation method:" "pip install (recommended)" "Build from source" "Skip")
     
     case "$choice" in
-        "cargo (from source)")
-            log_info "Installing netaudio via cargo..."
-            run_cmd "cargo install netaudio"
-            run_cmd "cargo install netaudio-daemon"
+        "pip install (recommended)")
+            log_info "Installing netaudio via pip (downloads pre-built Linux wheel)..."
+            run_cmd "pip install netaudio"
+            log_info "netaudio includes CLI, daemon, and web UI"
             ;;
-        "Download binary")
-            log_info "Checking for pre-built releases..."
-            run_cmd "curl -s https://api.github.com/repos/teodly/netaudio/releases/latest | grep browser_download_url | head -1"
-            log_warn "Manual download required - visit https://github.com/teodly/netaudio/releases"
+        "Build from source")
+            log_info "Building netaudio from source..."
+            run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/chris-ritsen/network-audio-controller.git"
+            run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && cargo install --path ."
+            log_info "Built from source (requires Rust toolchain)"
             ;;
-        "Package manager")
-            log_warn "netaudio may not be available in standard repositories yet"
+        "Skip")
+            log_info "Skipping netaudio installation"
             ;;
     esac
     
