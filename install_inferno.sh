@@ -1019,10 +1019,6 @@ step_optional_cable() {
     log_info "Recommended installation: Download .deb package from GitHub releases"
     log_info "URL: https://github.com/magillos/Cable/releases"
     
-    if prompt_yes_no "Open Cable releases page in browser?" "y"; then
-        run_cmd "xdg-open https://github.com/magillos/Cable/releases 2>/dev/null || echo 'Please visit: https://github.com/magillos/Cable/releases'"
-    fi
-    
     if prompt_yes_no "Download and install latest Cable .deb package now?" "n"; then
         log_info "Fetching latest .deb download URL..."
         local deb_url
@@ -1063,7 +1059,8 @@ step_optional_millisecond() {
     run_cmd_sudo "cd "$ACTUAL_HOME/Millisecond" && meson install -C build/"
     
     if prompt_yes_no "Run Millisecond now to optimize system?" "y"; then
-        run_cmd "millisecond"
+        log_info "Running Millisecond with sudo (requires root for system tuning)..."
+        run_cmd_sudo "millisecond"
     fi
 }
 
