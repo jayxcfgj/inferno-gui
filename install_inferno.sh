@@ -1115,17 +1115,10 @@ step_optional_gui() {
     fi
     
     log_info "Installing Inferno GUI package from $gui_dest..."
-    # Ensure pipx is available
-    if ! command -v pipx &> /dev/null; then
-        log_info "pipx not found, installing..."
-        run_cmd_sudo "apt-get install -y pipx"
-    fi
-    # Run pipx as actual user to install to correct location
-    if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
-        run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'cd "$WORK_DIR/gui" && pipx install --force -e .'"
-    else
-        run_cmd "cd "$WORK_DIR/gui" && pipx install --force -e ."
-    fi
+    # Install system-wide with pip (requires --break-system-packages on Debian/Ubuntu 24.04+)
+    run_cmd_sudo "apt-get install -y python3-tomli python3-pyqt6 python3-pip"
+    # Install GUI package system-wide with pip (requires --break-system-packages on Debian/Ubuntu 24.04+)
+    run_cmd_sudo "pip install --break-system-packages -e "$WORK_DIR/gui""
     log_success "Inferno GUI installed to $gui_dest"
 }
 
