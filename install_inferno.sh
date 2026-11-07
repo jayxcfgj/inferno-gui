@@ -1083,6 +1083,12 @@ show_summary() {
     if [ "$install_netaudio" = "true" ]; then
         echo "5. Use netaudio-web for Dante routing: http://localhost:8080"
     fi
+    if [ "$install_cable" = "true" ]; then
+        echo "6. Cable (PipeWire GUI) installed - launch from applications menu"
+    fi
+    if [ "$install_millisecond" = "true" ]; then
+        echo "7. Millisecond installed - run 'millisecond' to tune system"
+    fi
     echo ""
     if [ "$install_inferno" = "true" ]; then
         echo "Configuration Files:"
@@ -1106,9 +1112,6 @@ show_summary() {
     echo "  - Ensure your user is in 'realtime' group: sudo usermod -a -G realtime \$USER"
     echo "  - Check /etc/security/limits.d/audio.conf for realtime limits"
 }
-
-# Run main
-main "$@"
 
 # Run main
 main "$@"
