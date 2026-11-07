@@ -897,6 +897,10 @@ step_optional_netaudio() {
                 fi
             fi
             
+            # Install build dependencies (JACK, ALSA, PulseAudio development libraries)
+            log_info "Installing build dependencies for netaudio (JACK, ALSA, PulseAudio)..."
+            run_cmd_sudo "apt-get install -y libjack-jackd2-dev libasound2-dev libpulse-dev libdbus-1-dev pkg-config"
+            
             # Remove existing directory if present
             if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/network-audio-controller" ]; then
                 log_info "Removing existing network-audio-controller directory..."
