@@ -274,6 +274,9 @@ EOF
             ;;
         "Optional tools only")
             install_optional=true
+            install_netaudio=true
+            install_cable=true
+            install_millisecond=true
             ;;
         "Custom selection")
             install_inferno=$(prompt_yes_no "Install Inferno (statime, inferno plugin, PipeWire config)?" "y" && echo "true" || echo "false")
@@ -288,11 +291,6 @@ EOF
 
     if [ "$install_inferno" = "false" ] && [ "$install_optional" = "false" ]; then
         log_info "Nothing selected. Exiting."
-        exit 0
-    fi
-
-    if ! prompt_yes_no "Continue with installation?" "y"; then
-        log_info "Installation cancelled by user."
         exit 0
     fi
 
