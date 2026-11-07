@@ -7,6 +7,9 @@ import os
 import sys
 import signal
 
+# Import version info first (needed for error messages)
+from inferno_gui.core.version import __app_name__
+
 def main():
     # Check for root privileges (needed for statime PTP)
     if os.getuid() != 0:
@@ -23,7 +26,6 @@ def main():
     from pathlib import Path
 
     from inferno_gui.ui.main_window import MainWindow
-    from inferno_gui.core.version import __app_name__
 
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)
