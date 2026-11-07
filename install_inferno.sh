@@ -1126,6 +1126,12 @@ show_summary() {
     echo "  - Run 'millisecond' to tune system settings"
     echo "  - Ensure your user is in 'realtime' group: sudo usermod -a -G realtime \$USER"
     echo "  - Check /etc/security/limits.d/audio.conf for realtime limits"
+    echo ""
+    echo "Inferno GUI:"
+    echo "  Launch with: sudo inferno-gui"
+    echo "  Or directly:   sudo python3 -m inferno_gui"
+    echo "  Or from dir:   sudo ./run_gui.sh"
+    echo "  (Requires root for PTP hardware timestamping)"
 }
 
 # Run main
