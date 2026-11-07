@@ -190,6 +190,38 @@ prompt_input() {
 # MAIN INSTALLATION FLOW
 # =============================================================================
 
+# Fetch latest release info from GitHub API
+fetch_latest_release() {
+    local repo="$1"
+    local api_url="https://api.github.com/repos/$repo/releases/latest"
+    local version
+    # Use python for robust JSON parsing
+    version=$(curl -s "$api_url" 2>/dev/null | python3 -c "import sys, json; print(json.load(sys.stdin).get('tag_name', ''))" 2>/dev/null)
+    if [ -z "$version" ]; then
+        version=$(curl -s "$api_url" 2>/dev/null | python3 -c "import sys, json; print(json.load(sys.stdin).get('name', ''))" 2>/dev/null)
+    fi
+    echo "$version"
+}
+
+# Fetch latest release asset URL
+fetch_latest_asset_url() {
+    local repo="$1"
+    local pattern="$2"
+    local api_url="https://api.github.com/repos/$repo/releases/latest"
+    local url
+    # Use python for robust JSON parsing
+    url=$(curl -s "$api_url" 2>/dev/null | python3 -c "
+import sys, json, re
+data = json.load(sys.stdin)
+pattern = re.compile(r'$pattern')
+for asset in data.get('assets', []):
+    if pattern.search(asset.get('browser_download_url', '')):
+        print(asset['browser_download_url'])
+        break
+" 2>/dev/null)
+    echo "$url"
+}
+
 main() {
     clear
     cat << 'EOF'
@@ -212,52 +244,106 @@ EOF
         exit 1
     fi
 
+    # Main menu
+    echo
+    echo "Select installation mode:"
+    echo "  1) Full installation (Inferno + Optional tools)"
+    echo "  2) Inferno only (skip optional tools)"
+    echo "  3) Optional tools only (skip Inferno - requires existing inferno setup)"
+    echo "  4) Custom selection"
+    echo
+    local mode
+    mode=$(prompt_select "Choose installation mode:" "Full installation" "Inferno only" "Optional tools only" "Custom selection")
+
+    local install_inferno=false
+    local install_optional=false
+    local install_netaudio=false
+    local install_cable=false
+    local install_millisecond=false
+
+    case "$mode" in
+        "Full installation")
+            install_inferno=true
+            install_optional=true
+            install_netaudio=true
+            install_cable=true
+            install_millisecond=true
+            ;;
+        "Inferno only")
+            install_inferno=true
+            ;;
+        "Optional tools only")
+            install_optional=true
+            ;;
+        "Custom selection")
+            install_inferno=$(prompt_yes_no "Install Inferno (statime, inferno plugin, PipeWire config)?" "y" && echo "true" || echo "false")
+            install_netaudio=$(prompt_yes_no "Install netaudio (Dante controller)?" "y" && echo "true" || echo "false")
+            install_cable=$(prompt_yes_no "Install Cable (PipeWire GUI)?" "y" && echo "true" || echo "false")
+            install_millisecond=$(prompt_yes_no "Install Millisecond (realtime tuning)?" "y" && echo "true" || echo "false")
+            if [ "$install_netaudio" = "true" ] || [ "$install_cable" = "true" ] || [ "$install_millisecond" = "true" ]; then
+                install_optional=true
+            fi
+            ;;
+    esac
+
+    if [ "$install_inferno" = "false" ] && [ "$install_optional" = "false" ]; then
+        log_info "Nothing selected. Exiting."
+        exit 0
+    fi
+
     if ! prompt_yes_no "Continue with installation?" "y"; then
         log_info "Installation cancelled by user."
         exit 0
     fi
 
-    # Step 1: System Update
-    step_system_update
+    # Step 1-11: Inferno core installation
+    if [ "$install_inferno" = "true" ]; then
+        # Step 1: System Update
+        step_system_update
 
-    # Step 2: PipeWire Check/Install
-    step_pipewire
+        # Step 2: PipeWire Check/Install
+        step_pipewire
 
-    # Step 3: Required Packages
-    step_required_packages
+        # Step 3: Required Packages
+        step_required_packages
 
-    # Step 4: Rust Toolchain
-    step_rust
+        # Step 4: Rust Toolchain
+        step_rust
 
-    # Step 5: Build statime and inferno
-    step_build_statime_inferno
+        # Step 5: Build statime and inferno
+        step_build_statime_inferno
 
-    # Step 6: Network Interface Selection
-    step_network_interface
+        # Step 6: Network Interface Selection
+        step_network_interface
 
-    # Step 7: Configure statime
-    step_configure_statime
+        # Step 7: Configure statime
+        step_configure_statime
 
-    # Step 8: Build inferno ALSA plugin
-    step_build_inferno_plugin
+        # Step 8: Build inferno ALSA plugin
+        step_build_inferno_plugin
 
-    # Step 9: Install ALSA plugin
-    step_install_alsa_plugin
+        # Step 9: Install ALSA plugin
+        step_install_alsa_plugin
 
-    # Step 10: Configure ALSA (.asoundrc)
-    step_configure_alsa
+        # Step 10: Configure ALSA (.asoundrc)
+        step_configure_alsa
 
-    # Step 11: Configure PipeWire for inferno
-    step_configure_pipewire
+        # Step 11: Configure PipeWire for inferno
+        step_configure_pipewire
+    fi
 
-    # Step 12: Optional - netaudio
-    step_optional_netaudio
-
-    # Step 13: Optional - Cable
-    step_optional_cable
-
-    # Step 14: Optional - Millisecond
-    step_optional_millisecond
+    # Step 12-14: Optional tools
+    if [ "$install_optional" = "true" ]; then
+        if [ "$install_netaudio" = "true" ]; then
+            step_optional_netaudio
+        fi
+        if [ "$install_cable" = "true" ]; then
+            step_optional_cable
+        fi
+        if [ "$install_millisecond" = "true" ]; then
+            step_optional_millisecond
+        fi
+    fi
 
     log_success "Installation complete!"
     show_summary
@@ -752,8 +838,17 @@ step_optional_netaudio() {
         return 0
     fi
     
+    log_info "Fetching latest netaudio release..."
+    local latest_version
+    latest_version=$(fetch_latest_release "chris-ritsen/network-audio-controller")
+    if [ -n "$latest_version" ]; then
+        log_info "Latest netaudio version: $latest_version"
+    else
+        log_warn "Could not fetch latest version, will install latest from PyPI"
+    fi
+    
     log_info "netaudio installation options:"
-    echo "  1) Install via pip (pre-built Linux wheel from GitHub releases)"
+    echo "  1) Install via pip (pre-built Linux wheel from PyPI/GitHub releases)"
     echo "  2) Build from source (requires Rust)"
     echo "  3) Skip installation"
     
@@ -763,7 +858,7 @@ step_optional_netaudio() {
     case "$choice" in
         "pip install (recommended)")
             log_info "Installing netaudio via pip (downloads pre-built Linux wheel)..."
-            run_cmd "pip install netaudio"
+            run_cmd "pip install --upgrade netaudio"
             log_info "netaudio includes CLI, daemon, and web UI"
             ;;
         "Build from source")
@@ -810,6 +905,15 @@ EOF
 step_optional_cable() {
     log_step "Step 13: Optional - Cable (PipeWire GUI)"
     
+    log_info "Fetching latest Cable release..."
+    local latest_version
+    latest_version=$(fetch_latest_release "magillos/Cable")
+    if [ -n "$latest_version" ]; then
+        log_info "Latest Cable version: $latest_version"
+    else
+        log_warn "Could not fetch latest version"
+    fi
+    
     log_info "Cable is a graphical PipeWire patchbay/routing tool."
     log_info "Recommended installation: Download .deb package from GitHub releases"
     log_info "URL: https://github.com/magillos/Cable/releases"
@@ -819,7 +923,16 @@ step_optional_cable() {
     fi
     
     if prompt_yes_no "Download and install latest Cable .deb package now?" "n"; then
-        log_info "This would require manual version selection. Please download from the releases page."
+        log_info "Fetching latest .deb download URL..."
+        local deb_url
+        deb_url=$(fetch_latest_asset_url "magillos/Cable" "\.deb$")
+        if [ -n "$deb_url" ]; then
+            log_info "Downloading: $deb_url"
+            run_cmd "cd /tmp && wget -q "$deb_url" -O cable_latest.deb && sudo dpkg -i cable_latest.deb"
+            log_success "Cable installed"
+        else
+            log_warn "Could not find .deb asset. Please download manually from releases page."
+        fi
     fi
 }
 
