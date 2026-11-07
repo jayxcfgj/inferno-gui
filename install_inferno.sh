@@ -912,10 +912,15 @@ step_optional_netaudio() {
             if ! command -v pipx &> /dev/null; then
                 log_info "pipx not found, installing..."
                 run_cmd_sudo "apt-get install -y pipx"
-                run_cmd "pipx ensurepath"
             fi
-            # Install from local source using pipx (isolated environment)
-            run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && pipx install --force ."
+            # Run pipx as actual user to install to correct location
+            if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'pipx ensurepath'"
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'cd "$ACTUAL_HOME/network-audio-controller" && pipx install --force .'"
+            else
+                run_cmd "pipx ensurepath"
+                run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && pipx install --force ."
+            fi
             log_info "Built and installed from source via pipx (isolated environment)"
             ;;
         "Skip")
@@ -963,17 +968,17 @@ EOF
             run_cmd_sudo "systemctl daemon-reload"
             run_cmd_sudo "systemctl enable netaudio-daemon"
             run_cmd_sudo "systemctl start netaudio-daemon"
-            sleep 2
+            sleep 3
             
             # Show web UI address and offer to open browser
             log_info "Getting netaudio daemon web interface address..."
             local web_url
-            web_url=$(sudo -u "$SUDO_USER_VAL" XDG_RUNTIME_DIR=/run/user/$(id -u "$SUDO_USER_VAL") PATH="$ACTUAL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" netaudio daemon web 2>/dev/null | grep -oE 'https?://[^ ]+' | head -1)
+            web_url=$(sudo -H -u "$SUDO_USER_VAL" bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u "$SUDO_USER_VAL") PATH="$ACTUAL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" netaudio daemon web 2>/dev/null' | grep -oE 'https?://[^ ]+' | head -1)
             if [ -n "$web_url" ]; then
                 log_success "netaudio web UI available at: $web_url"
                 if prompt_yes_no "Open netaudio web UI in default browser?" "y"; then
                     log_info "Opening web UI in browser..."
-                    sudo -u "$SUDO_USER_VAL" XDG_RUNTIME_DIR=/run/user/$(id -u "$SUDO_USER_VAL") PATH="$ACTUAL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" netaudio daemon web --open
+                    sudo -H -u "$SUDO_USER_VAL" bash -c 'XDG_RUNTIME_DIR=/run/user/$(id -u "$SUDO_USER_VAL") PATH="$ACTUAL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" netaudio daemon web --open'
                 fi
             else
                 log_warn "Could not determine web UI address. Default is usually http://localhost:8777"
