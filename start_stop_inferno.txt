@@ -1,0 +1,34 @@
+inferno sarten:
+---------------
+
+statime starten mit (hier mit ptpv1):
+sudo ~/audio-inferno/statime/target/debug/statime -c ~/audio-inferno/statime/inferno-ptpv1.toml
+
+
+# Inferno als PipeWire-sINK hinzufügen:
+
+pw-cli create-node adapter '{ object.linger=1 factory.name=api.alsa.pcm.sink node.name=Inferno_sink media.class=Audio/Sink api.alsa.path=inferno session.suspend-timeout-seconds=0 node.pause-on-idle=false node.suspend-on-idle=false node.always-process=true api.alsa.headroom=128 api.alsa.pcm.card=999 }'
+
+Inferno als PipeWire-Source hinzufügen:
+
+pw-cli create-node adapter '{ object.linger=1 factory.name=api.alsa.pcm.source node.name=Inferno_source media.class=Audio/Source api.alsa.path=inferno session.suspend-timeout-seconds=0 node.pause-on-idle=false node.suspend-on-idle=false node.always-process=true api.alsa.headroom=128 api.alsa.pcm.card=999 }'
+
+
+
+Audio in qpwgraph und im Dante-Netzwerk routen, Fertig!
+
+
+
+Inferno beenden:
+----------------
+# Node-Ids der inferno sink und source raussuchen mit:
+
+pw-cli ls Node
+
+
+# nodes terminieren mit: 
+
+pw-cli destroy <ID>
+
+# statime-prozess beenden
+

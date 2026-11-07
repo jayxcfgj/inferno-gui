@@ -1,0 +1,627 @@
+"""Control Tab – Main interface for starting/stopping Inferno and PTP."""
+
+import os
+import subprocess
+import time
+from pathlib import Path
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QGroupBox, QGridLayout, QCheckBox, QProgressBar
+)
+from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal
+from PyQt6.QtGui import QFont, QColor, QDesktopServices
+from PyQt6.QtCore import QUrl
+
+from inferno_gui.core.config import (
+    get_statime_binary,
+    get_default_statime_config,
+    get_work_dir,
+)
+from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_log_entry
+
+
+_MAX_TERMINAL_LINES = 3000
+
+
+def _trim_terminal(edit, max_lines=_MAX_TERMINAL_LINES):
+    doc = edit.document()
+    if doc.blockCount() > max_lines:
+        cursor = edit.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        remove = doc.blockCount() - max_lines + 100
+        for _ in range(remove):
+            cursor.movePosition(cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor)
+        cursor.removeSelectedText()
+        cursor.deleteChar()
+
+
+class ControlTab(QWidget):
+    """Main control tab with Start/Stop buttons and status."""
+    
+    # Signals
+    inferno_started = pyqtSignal()
+    inferno_stopped = pyqtSignal()
+    ptp_started = pyqtSignal()
+    ptp_stopped = pyqtSignal()
+    status_changed = pyqtSignal(dict)  # For session tab
+    
+    def __init__(self, settings_tab=None):
+        super().__init__()
+        self.settings_tab = settings_tab
+        self.ptp_process: QProcess = None
+        self.is_ptp_running = False
+        self._ptp_offset = None
+        self._ptp_state = ""
+        self._ptp_freq = None
+        
+        self.parser = StatimeLogParser(filter_interval=1.0)
+        self._stdout_buffer = ''
+        self._stderr_buffer = ''
+        self._write_timer = QTimer(self)
+        self._write_timer.setInterval(50)
+        self._write_timer.timeout.connect(self._flush_terminal)
+        self._update_timer = QTimer(self)
+        self._update_timer.setInterval(500)
+        self._update_timer.timeout.connect(self._update_status_panel)
+        
+        self.init_ui()
+        self._load_saved_interface()
+        
+    def init_ui(self):
+        scroll = QWidget()
+        layout = QVBoxLayout(scroll)
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        # ── Top: PTP Control Group ──────────────────────────────
+        ptp_group = QGroupBox("PTP Clock Synchronization (statime)")
+        ptp_layout = QVBoxLayout(ptp_group)
+        ptp_layout.setSpacing(8)
+
+        # Interface selection row
+        iface_row = QHBoxLayout()
+        iface_row.addWidget(QLabel("Interface:"))
+        self.interface_combo = QComboBox()
+        self.interface_combo.setMinimumWidth(200)
+        self.interface_combo.setEnabled(True)
+        iface_row.addWidget(self.interface_combo)
+        
+        self.refresh_iface_btn = QPushButton("↻")
+        self.refresh_iface_btn.setFixedWidth(36)
+        self.refresh_iface_btn.setToolTip("Refresh interface list")
+        self.refresh_iface_btn.clicked.connect(self._refresh_interfaces)
+        iface_row.addWidget(self.refresh_iface_btn)
+        
+        iface_row.addSpacing(16)
+        iface_row.addWidget(QLabel("PTP Version:"))
+        self.ptp_v1_radio = QCheckBox("PTPv1 (IEEE 1588-2002)")
+        self.ptp_v2_radio = QCheckBox("PTPv2 (IEEE 1588-2008)")
+        self.ptp_v2_radio.setChecked(True)
+        self.ptp_v1_radio.toggled.connect(lambda: self._on_ptp_version_changed('v1'))
+        self.ptp_v2_radio.toggled.connect(lambda: self._on_ptp_version_changed('v2'))
+        iface_row.addWidget(self.ptp_v1_radio)
+        iface_row.addWidget(self.ptp_v2_radio)
+        iface_row.addStretch()
+        ptp_layout.addLayout(iface_row)
+
+        # IP address display
+        self.ip_label = QLabel("IP: —")
+        self.ip_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        ptp_layout.addWidget(self.ip_label)
+
+        # Start/Stop buttons row
+        btn_row = QHBoxLayout()
+        
+        self.start_ptp_btn = QPushButton("▶ START PTP")
+        self.start_ptp_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50; color: white;
+                border: none; padding: 10px 20px;
+                font-size: 14px; font-weight: bold; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #45a049; }
+            QPushButton:disabled { background-color: #555; color: #888; }
+        """)
+        self.start_ptp_btn.clicked.connect(self.start_ptp)
+        btn_row.addWidget(self.start_ptp_btn)
+
+        self.stop_ptp_btn = QPushButton("■ STOP PTP")
+        self.stop_ptp_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336; color: white;
+                border: none; padding: 10px 20px;
+                font-size: 14px; font-weight: bold; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #da190b; }
+            QPushButton:disabled { background-color: #555; color: #888; }
+        """)
+        self.stop_ptp_btn.setEnabled(False)
+        self.stop_ptp_btn.clicked.connect(self.stop_ptp)
+        btn_row.addWidget(self.stop_ptp_btn)
+
+        # Sync status indicator
+        btn_row.addSpacing(16)
+        btn_row.addWidget(QLabel("Sync:"))
+        self.sync_light = QLabel()
+        self.sync_light.setFixedSize(24, 24)
+        self.sync_light.setStyleSheet("background-color: gray; border-radius: 12px;")
+        btn_row.addWidget(self.sync_light)
+        
+        self.sync_label = QLabel("—")
+        self.sync_label.setStyleSheet("color: #ccc; font-size: 12px; font-weight: bold;")
+        self.sync_label.setMinimumWidth(140)
+        btn_row.addWidget(self.sync_label)
+        
+        btn_row.addStretch()
+        ptp_layout.addLayout(btn_row)
+
+        # PTP Status details
+        status_grid = QGridLayout()
+        status_grid.setSpacing(4)
+        self.ptp_state_label = QLabel("State: —")
+        self.ptp_state_label.setStyleSheet("color: #ccc; font-size: 11px;")
+        self.ptp_offset_label = QLabel("Offset: —")
+        self.ptp_offset_label.setStyleSheet("color: #ccc; font-size: 11px;")
+        self.ptp_freq_label = QLabel("Freq: —")
+        self.ptp_freq_label.setStyleSheet("color: #ccc; font-size: 11px;")
+        status_grid.addWidget(self.ptp_state_label, 0, 0)
+        status_grid.addWidget(self.ptp_offset_label, 0, 1)
+        status_grid.addWidget(self.ptp_freq_label, 0, 2)
+        ptp_layout.addLayout(status_grid)
+
+        layout.addWidget(ptp_group)
+
+        # ── Middle: Inferno ALSA Plugin Control ─────────────────
+        inferno_group = QGroupBox("Inferno ALSA Plugin (Dante Virtual Soundcard)")
+        inferno_layout = QVBoxLayout(inferno_group)
+        inferno_layout.setSpacing(8)
+
+        # Status row
+        inf_status_row = QHBoxLayout()
+        self.inferno_status_label = QLabel("● Inferno: Stopped")
+        self.inferno_status_label.setStyleSheet("font-size: 13px; color: #888;")
+        inf_status_row.addWidget(self.inferno_status_label)
+        inf_status_row.addStretch()
+        
+        self.netaudio_btn = QPushButton("🌐 Open NetAudio Web UI")
+        self.netaudio_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3; color: white;
+                border: none; padding: 8px 16px;
+                font-size: 12px; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #1976D2; }
+        """)
+        self.netaudio_btn.clicked.connect(self._open_netaudio)
+        self.netaudio_btn.setEnabled(False)  # Enable when running
+        inf_status_row.addWidget(self.netaudio_btn)
+        inferno_layout.addLayout(inf_status_row)
+
+        # Note about inferno auto-start
+        note = QLabel(
+            "Note: The Inferno ALSA plugin activates automatically when an application "
+            "opens the 'inferno' PCM device (via PipeWire). No separate start button needed."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #888; font-size: 10px;")
+        inferno_layout.addWidget(note)
+
+        # Quick test button
+        test_row = QHBoxLayout()
+        self.test_alsa_btn = QPushButton("Test ALSA Device (aplay -L)")
+        self.test_alsa_btn.clicked.connect(self._test_alsa_device)
+        test_row.addWidget(self.test_alsa_btn)
+        test_row.addStretch()
+        inferno_layout.addLayout(test_row)
+
+        layout.addWidget(inferno_group)
+
+        # ── Bottom: Log Terminal ────────────────────────────────
+        log_group = QGroupBox("Statime Log Output (filtered)")
+        log_layout = QVBoxLayout(log_group)
+
+        # Header with verbose toggle
+        log_header = QHBoxLayout()
+        self.verbose_cb = QCheckBox("Verbose (show all lines)")
+        self.verbose_cb.setStyleSheet("font-size: 11px;")
+        self.verbose_cb.toggled.connect(self._on_verbose_toggled)
+        log_header.addWidget(self.verbose_cb)
+        log_header.addStretch()
+        log_header.addWidget(QLabel("PTP Log:"))
+        log_layout.addLayout(log_header)
+
+        self.terminal_output = QTextEdit()
+        self.terminal_output.setReadOnly(True)
+        self.terminal_output.setFont(QFont("JetBrains Mono, Courier New, monospace", 10))
+        self.terminal_output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.terminal_output.setStyleSheet("""
+            QTextEdit {
+                background-color: #0d0d0d;
+                color: #E0E0E0;
+                border: 1px solid #333333;
+                selection-background-color: #3d3d3d;
+            }
+        """)
+        log_layout.addWidget(self.terminal_output)
+
+        layout.addWidget(log_group, stretch=1)
+
+        # Set as main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll)
+
+        # Process setup
+        self.ptp_process = QProcess()
+        self.ptp_process.readyReadStandardOutput.connect(self._on_stdout)
+        self.ptp_process.readyReadStandardError.connect(self._on_stderr)
+        self.ptp_process.finished.connect(self._ptp_finished)
+
+        # Update interface IP when selection changes
+        self.interface_combo.currentIndexChanged.connect(self._on_interface_changed)
+
+    def _load_saved_interface(self):
+        """Load saved interface from settings."""
+        self._refresh_interfaces()
+        settings = QSettings("InfernoGUI", "control")
+        saved = settings.value("selected_interface", "", type=str)
+        ptp_ver = settings.value("ptp_version", "v2", type=str)
+        
+        if ptp_ver == 'v1':
+            self.ptp_v1_radio.setChecked(True)
+        else:
+            self.ptp_v2_radio.setChecked(True)
+        
+        if saved:
+            idx = self.interface_combo.findText(saved)
+            if idx >= 0:
+                self.interface_combo.setCurrentIndex(idx)
+    
+    def _refresh_interfaces(self):
+        """Refresh the interface list."""
+        current = self.interface_combo.currentText()
+        self.interface_combo.clear()
+        
+        from inferno_gui.core.config import get_available_interfaces
+        interfaces = get_available_interfaces()
+        
+        if interfaces:
+            self.interface_combo.addItems(interfaces)
+            # Restore selection
+            if current:
+                idx = self.interface_combo.findText(current)
+                if idx >= 0:
+                    self.interface_combo.setCurrentIndex(idx)
+        else:
+            self.interface_combo.addItem("No interfaces found")
+            self.interface_combo.setEnabled(False)
+            self.start_ptp_btn.setEnabled(False)
+
+    def _on_interface_changed(self, index):
+        """Handle interface selection change."""
+        iface = self.interface_combo.currentText()
+        if iface and not iface.startswith("No interfaces"):
+            QSettings("InfernoGUI", "control").setValue("selected_interface", iface)
+            self._update_ip_display(iface)
+            # Also update settings tab if linked
+            if self.settings_tab:
+                self.settings_tab.set_interface(iface)
+    
+    def _on_ptp_version_changed(self, version: str):
+        """Handle PTP version radio button change."""
+        if version == 'v1':
+            self.ptp_v2_radio.setChecked(False)
+        else:
+            self.ptp_v1_radio.setChecked(False)
+        QSettings("InfernoGUI", "control").setValue("ptp_version", version)
+        if self.settings_tab:
+            self.settings_tab.set_ptp_version(version)
+
+    def _update_ip_display(self, iface: str):
+        """Update IP address label for selected interface."""
+        from inferno_gui.core.config import get_interface_ip
+        ip = get_interface_ip(iface)
+        if ip:
+            self.ip_label.setText(f"IP: {ip}")
+            self.ip_label.setStyleSheet("color: #4caf50; font-size: 11px;")
+        else:
+            self.ip_label.setText("IP: (no address assigned)")
+            self.ip_label.setStyleSheet("color: #ffc107; font-size: 11px;")
+
+    def start_ptp(self):
+        """Start statime PTP daemon."""
+        iface = self.interface_combo.currentText()
+        if not iface or iface.startswith("No interfaces"):
+            self._append_log("ERROR: Please select a valid network interface")
+            return
+
+        # Check sudo
+        sudo_check = QProcess()
+        sudo_check.start("sudo", ["-n", "true"])
+        sudo_check.waitForFinished(3000)
+        if sudo_check.exitCode() != 0:
+            self._append_log("ERROR: No cached sudo credentials.")
+            self._append_log("Run 'sudo -v' in a terminal first, then click START PTP.")
+            return
+
+        # Determine config file
+        ptp_version = 'v1' if self.ptp_v1_radio.isChecked() else 'v2'
+        config_file = get_default_statime_config(ptp_version)
+        statime_bin = get_statime_binary()
+
+        if not statime_bin.exists():
+            self._append_log(f"ERROR: statime binary not found at {statime_bin}")
+            self._append_log("Please run the installation script first.")
+            return
+
+        # Update config with selected interface
+        self._update_statime_config(config_file, iface)
+
+        self.parser.reset_all()
+        self.terminal_output.clear()
+        self._append_log(f"Starting statime (PTP{ptp_version[-1]}) on {iface}...")
+        self._append_log(f"Config: {config_file}")
+        self._append_log(f"Binary: {statime_bin}")
+
+        cmd = f"sudo {statime_bin} -c {config_file}"
+        self.ptp_process.start("bash", ["-c", cmd])
+        
+        self.is_ptp_running = True
+        self.start_ptp_btn.setEnabled(False)
+        self.stop_ptp_btn.setEnabled(True)
+        self.interface_combo.setEnabled(False)
+        self.ptp_v1_radio.setEnabled(False)
+        self.ptp_v2_radio.setEnabled(False)
+        self.refresh_iface_btn.setEnabled(False)
+        self._update_timer.start()
+        self.ptp_started.emit()
+        self._emit_status()
+
+    def _update_statime_config(self, config_path: Path, interface: str):
+        """Update statime config with selected interface."""
+        from inferno_gui.core.config import StatimeConfig
+        try:
+            cfg = StatimeConfig(str(config_path))
+            if cfg.load():
+                cfg.set_interface(interface)
+                cfg.save()
+                self._append_log(f"Updated config with interface: {interface}")
+        except Exception as e:
+            self._append_log(f"Warning: Could not update config: {e}")
+
+    def stop_ptp(self):
+        """Stop statime PTP daemon."""
+        if self.is_ptp_running and self.ptp_process:
+            self._append_log("Stopping PTP...")
+            self.ptp_process.terminate()
+            if not self.ptp_process.waitForFinished(3000):
+                self._append_log("PTP did not terminate gracefully, forcing...")
+                self.ptp_process.kill()
+                self.ptp_process.waitForFinished()
+            self._reset_ptp_state()
+            self._append_log("PTP stopped.")
+        self.ptp_stopped.emit()
+        self._emit_status()
+
+    def _reset_ptp_state(self):
+        self.is_ptp_running = False
+        self.ptp_process = None
+        self.start_ptp_btn.setEnabled(True)
+        self.stop_ptp_btn.setEnabled(False)
+        self.interface_combo.setEnabled(True)
+        self.ptp_v1_radio.setEnabled(True)
+        self.ptp_v2_radio.setEnabled(True)
+        self.refresh_iface_btn.setEnabled(True)
+        self._update_timer.stop()
+        self._ptp_state = ""
+        self._ptp_offset = None
+        self._ptp_freq = None
+        self.sync_light.setStyleSheet("background-color: gray; border-radius: 12px;")
+        self.sync_label.setText("—")
+        self.ptp_state_label.setText("State: —")
+        self.ptp_offset_label.setText("Offset: —")
+        self.ptp_freq_label.setText("Freq: —")
+
+    def _ptp_finished(self, exit_code, exit_status):
+        self._reset_ptp_state()
+        if exit_code == 0:
+            self._append_log("PTP process completed successfully.")
+        else:
+            self._append_log(f"PTP process exited with code: {exit_code}")
+
+    def _on_stdout(self):
+        data = self.ptp_process.readAllStandardOutput()
+        text = bytes(data).decode('utf-8', errors='replace')
+        self._stdout_buffer += text
+        if not self._write_timer.isActive():
+            self._write_timer.start()
+
+    def _on_stderr(self):
+        data = self.ptp_process.readAllStandardError()
+        text = bytes(data).decode('utf-8', errors='replace')
+        self._stderr_buffer += text
+        if not self._write_timer.isActive():
+            self._write_timer.start()
+
+    def _flush_terminal(self):
+        if self._stdout_buffer:
+            self._process_log_output(self._stdout_buffer)
+            self._stdout_buffer = ''
+        if self._stderr_buffer:
+            self._process_log_output(self._stderr_buffer)
+            self._stderr_buffer = ''
+        self._write_timer.stop()
+
+    def _process_log_output(self, text: str):
+        """Process log output through parser and display filtered results."""
+        for line in text.split('\n'):
+            if not line:
+                continue
+            entry = self.parser.parse_line(line)
+            if entry:
+                self.parser.update_pending_metrics(entry)
+                formatted = format_log_entry(entry)
+                self._append_colored(formatted, entry.severity)
+
+    def _append_colored(self, text: str, severity: LogSeverity):
+        """Append text with color coding."""
+        cursor = self.terminal_output.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        
+        color_map = {
+            LogSeverity.ERROR: QColor('#f44336'),
+            LogSeverity.WARNING: QColor('#ffc107'),
+            LogSeverity.INFO: QColor('#E0E0E0'),
+        }
+        
+        from PyQt6.QtGui import QTextCharFormat
+        fmt = QTextCharFormat()
+        fmt.setForeground(color_map.get(severity, color_map[LogSeverity.INFO]))
+        cursor.insertText(text + '\n', fmt)
+        self.terminal_output.setTextCursor(cursor)
+        self.terminal_output.ensureCursorVisible()
+        _trim_terminal(self.terminal_output)
+
+    def _append_log(self, text: str):
+        """Append plain log message."""
+        self._append_colored(f"[{time.strftime('%H:%M:%S')}] {text}", LogSeverity.INFO)
+
+    def _update_status_panel(self):
+        """Update status indicators from parser."""
+        status = self.parser.get_sync_status()
+        self._ptp_state = status['state']
+        self._ptp_offset = status['offset_ns']
+        self._ptp_freq = status['freq_ppb']
+        
+        # Update labels
+        self.ptp_state_label.setText(f"State: {status['state']}")
+        
+        if status['offset_ns'] is not None:
+            self.ptp_offset_label.setText(f"Offset: {status['offset_ns']} ns")
+        else:
+            self.ptp_offset_label.setText("Offset: —")
+        
+        if status['freq_ppb'] is not None:
+            self.ptp_freq_label.setText(f"Freq: {status['freq_ppb']} ppb")
+        else:
+            self.ptp_freq_label.setText("Freq: —")
+        
+        # Update sync light
+        self._update_sync_light(status)
+        
+        # Emit for session tab
+        self._emit_status()
+
+    def _update_sync_light(self, status: dict):
+        """Update the sync traffic light."""
+        state = status['state']
+        offset = status['offset_ns']
+        
+        if state == 'MASTER':
+            color = "#2196F3"
+            label = "Grand Master"
+            tip = "Grand Master – no PTP peer detected"
+        elif state == 'FAULTY':
+            color = "#f44336"
+            label = "FAULTY"
+            tip = "FAULTY – link or PTP error"
+        elif state == 'LISTENING':
+            color = "gray"
+            label = "Listening..."
+            tip = "Listening for PTP messages..."
+        elif state == 'UNCALIBRATED':
+            color = "orange"
+            label = "Uncalibrated"
+            tip = "Uncalibrated – acquiring sync"
+        elif state == 'SLAVE' and offset is not None:
+            label = f"Slave ({offset} ns)"
+            if offset <= 200:
+                color = "#4caf50"
+                tip = f"Sync: {offset}ns (excellent)"
+            elif offset <= 1000:
+                color = "#ffc107"
+                tip = f"Sync: {offset}ns (good)"
+            else:
+                color = "#f44336"
+                tip = f"Sync: {offset}ns (poor)"
+        else:
+            color = "gray"
+            label = "Initializing..."
+            tip = "Waiting for sync..."
+        
+        self.sync_light.setStyleSheet(f"background-color: {color}; border-radius: 12px;")
+        self.sync_light.setToolTip(tip)
+        self.sync_label.setText(label)
+
+    def _emit_status(self):
+        """Emit status for session tab."""
+        self.status_changed.emit({
+            'ptp_running': self.is_ptp_running,
+            'ptp_state': self._ptp_state,
+            'ptp_offset': self._ptp_offset,
+            'ptp_freq': self._ptp_freq,
+        })
+
+    def _on_verbose_toggled(self, checked: bool):
+        """Handle verbose checkbox toggle."""
+        self.parser.filter_interval = 0.1 if checked else 1.0
+        if checked:
+            self._append_log("Verbose mode enabled - showing all log lines")
+        else:
+            self._append_log("Verbose mode disabled - filtered output (1 line/sec)")
+
+    def _test_alsa_device(self):
+        """Test if inferno ALSA device is available."""
+        import subprocess
+        try:
+            result = subprocess.run(['aplay', '-L'], capture_output=True, text=True, timeout=5)
+            lines = [l for l in result.stdout.split('\n') if 'inferno' in l.lower()]
+            if lines:
+                self._append_log("Inferno ALSA device found:")
+                for l in lines:
+                    self._append_log(f"  {l.strip()}")
+            else:
+                self._append_log("Inferno ALSA device NOT found in aplay -L")
+                self._append_log("Check ~/.asoundrc and ALSA plugin installation")
+        except Exception as e:
+            self._append_log(f"Error testing ALSA: {e}")
+
+    def _open_netaudio(self):
+        """Open netaudio web interface."""
+        QDesktopServices.openUrl(QUrl("http://localhost:8080"))
+
+    def get_ptp_status(self) -> dict:
+        """Get current PTP status for session tab."""
+        return {
+            'running': self.is_ptp_running,
+            'state': self._ptp_state,
+            'offset': self._ptp_offset,
+            'freq': self._ptp_freq,
+        }
+
+    def set_interface(self, iface: str):
+        """Set interface from settings tab."""
+        idx = self.interface_combo.findText(iface)
+        if idx >= 0:
+            self.interface_combo.setCurrentIndex(idx)
+
+    def set_ptp_version(self, version: str):
+        """Set PTP version from settings tab."""
+        if version == 'v1':
+            self.ptp_v1_radio.setChecked(True)
+        else:
+            self.ptp_v2_radio.setChecked(True)
+
+    def is_running(self) -> bool:
+        return self.is_ptp_running
+
+    def get_interface(self) -> str:
+        return self.interface_combo.currentText()
+
+    def get_ptp_version(self) -> str:
+        return 'v1' if self.ptp_v1_radio.isChecked() else 'v2'
+
+
+# Need QTextEdit import
+from PyQt6.QtWidgets import QTextEdit
