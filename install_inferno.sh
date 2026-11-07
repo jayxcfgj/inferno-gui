@@ -879,11 +879,25 @@ step_optional_netaudio() {
     # Daemon setup
     if prompt_yes_no "Set up netaudio-daemon as systemd service (auto-start)?" "y"; then
         local service_file="/etc/systemd/system/netaudio-daemon.service"
+        local netaudio_daemon_path
+        # Find netaudio-daemon binary location (pipx installs to ~/.local/bin)
+        if [ -f "$ACTUAL_HOME/.local/bin/netaudio-daemon" ]; then
+            netaudio_daemon_path="$ACTUAL_HOME/.local/bin/netaudio-daemon"
+        elif [ -f "$ACTUAL_HOME/.local/bin/netaudio" ]; then
+            # netaudio might have daemon as subcommand
+            netaudio_daemon_path="$ACTUAL_HOME/.local/bin/netaudio daemon"
+        elif command -v netaudio-daemon &> /dev/null; then
+            netaudio_daemon_path=$(command -v netaudio-daemon)
+        else
+            netaudio_daemon_path="/usr/local/bin/netaudio-daemon"
+        fi
+        
         if [ "$TEST_MODE" = true ]; then
             log_info "[TEST MODE] Would create systemd service: $service_file"
+            log_info "[TEST MODE] Daemon path: $netaudio_daemon_path"
             log_info "[TEST MODE] Would run: systemctl daemon-reload && systemctl enable netaudio-daemon && systemctl start netaudio-daemon"
         else
-            cat > "$service_file" << 'EOF'
+            cat > "$service_file" << EOF
 [Unit]
 Description=netaudio daemon for Dante/AES67 control
 After=network.target pipewire.service
@@ -891,9 +905,10 @@ Wants=pipewire.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/netaudio-daemon
+ExecStart=$netaudio_daemon_path
 Restart=on-failure
-User=%i
+User=$SUDO_USER_VAL
+Environment=PATH=$ACTUAL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target
