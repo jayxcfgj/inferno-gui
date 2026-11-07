@@ -633,10 +633,6 @@ step_install_alsa_plugin() {
         # grep returns 1 if no matches, don't fail script
         run_cmd "aplay -L | grep -i inferno || true"
     fi
-    
-    # Test plugin listing
-    log_info "Testing ALSA plugin detection..."
-    run_cmd "aplay -L | grep -i inferno"
 }
 
 step_configure_alsa() {
