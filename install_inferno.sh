@@ -882,6 +882,14 @@ step_optional_netaudio() {
             ;;
         "Build from source")
             log_info "Building netaudio from source..."
+            # Check for Rust/Cargo (required for building)
+            if ! command -v cargo &> /dev/null; then
+                log_warn "Rust/Cargo not found. Installing Rust toolchain..."
+                run_cmd "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+                run_cmd "source "$ACTUAL_HOME/.cargo/env""
+                export PATH="$ACTUAL_HOME/.cargo/bin:$PATH"
+            fi
+            
             # Remove existing directory if present
             if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/network-audio-controller" ]; then
                 log_info "Removing existing network-audio-controller directory..."
