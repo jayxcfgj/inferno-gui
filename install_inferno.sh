@@ -1083,7 +1083,7 @@ ${CYAN}Next Steps:${NC}
 ${CYAN}Configuration Files:${NC}
   • statime config: $STATIME_DIR/$(cat "$WORK_DIR/statime_config.txt" 2>/dev/null || echo "inferno-ptpv2.toml")
   • ALSA config: $ASOUNDRC
-  • PipeWire override: $HOME/.config/systemd/user/pipewire.service.d/override.conf
+  • PipeWire override: $ACTUAL_HOME/.config/systemd/user/pipewire.service.d/override.conf
   • Selected interface: $(cat "$WORK_DIR/selected_interface.txt" 2>/dev/null || echo "N/A")
   • PTP version: $(cat "$WORK_DIR/ptp_version.txt" 2>/dev/null || echo "v2")
 
