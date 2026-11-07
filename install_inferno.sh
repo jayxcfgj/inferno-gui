@@ -260,6 +260,7 @@ EOF
     local install_netaudio=false
     local install_cable=false
     local install_millisecond=false
+    local install_gui=false
 
     case "$mode" in
         "Full installation")
@@ -268,6 +269,7 @@ EOF
             install_netaudio=true
             install_cable=true
             install_millisecond=true
+            install_gui=true
             ;;
         "Inferno only")
             install_inferno=true
@@ -277,13 +279,15 @@ EOF
             install_netaudio=true
             install_cable=true
             install_millisecond=true
+            install_gui=true
             ;;
         "Custom selection")
             install_inferno=$(prompt_yes_no "Install Inferno (statime, inferno plugin, PipeWire config)?" "y" && echo "true" || echo "false")
             install_netaudio=$(prompt_yes_no "Install netaudio (Dante controller)?" "y" && echo "true" || echo "false")
             install_cable=$(prompt_yes_no "Install Cable (PipeWire GUI)?" "y" && echo "true" || echo "false")
             install_millisecond=$(prompt_yes_no "Install Millisecond (realtime tuning)?" "y" && echo "true" || echo "false")
-            if [ "$install_netaudio" = "true" ] || [ "$install_cable" = "true" ] || [ "$install_millisecond" = "true" ]; then
+            install_gui=$(prompt_yes_no "Install Inferno GUI (PyQt6 control panel)?" "y" && echo "true" || echo "false")
+            if [ "$install_netaudio" = "true" ] || [ "$install_cable" = "true" ] || [ "$install_millisecond" = "true" ] || [ "$install_gui" = "true" ]; then
                 install_optional=true
             fi
             ;;
@@ -1105,10 +1109,16 @@ step_optional_gui() {
     fi
     
     log_info "Installing Inferno GUI package from $gui_dest..."
+    # Ensure pipx is available
+    if ! command -v pipx &> /dev/null; then
+        log_info "pipx not found, installing..."
+        run_cmd_sudo "apt-get install -y pipx"
+    fi
+    # Run pipx as actual user to install to correct location
     if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
-        run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'cd "$WORK_DIR/gui" && pip install -e .'"
+        run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'cd "$WORK_DIR/gui" && pipx install --force -e .'"
     else
-        run_cmd "cd "$WORK_DIR/gui" && pip install -e ."
+        run_cmd "cd "$WORK_DIR/gui" && pipx install --force -e ."
     fi
     log_success "Inferno GUI installed to $gui_dest"
 }
