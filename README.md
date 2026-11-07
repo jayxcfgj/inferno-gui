@@ -1,9 +1,10 @@
 # Inferno GUI
 
-A Linux desktop application for managing **Inferno** – a Dante/AES67 virtual soundcard alternative for Linux using PipeWire.
+A Linux desktop application for easy installing and managing **Inferno** – a Dante/AES67 virtual soundcard alternative for Linux using PipeWire.
 
 ## Features
 
+- **Installation script**: easy installation
 - **PTP Clock Control**: Start/stop statime (PTPv1/PTPv2) with live filtered log output
 - **Interface Selection**: Dropdown with available network interfaces and IP display
 - **Audio Configuration**: Sample rate, TX/RX channels, device name, bind IP
@@ -29,7 +30,13 @@ A Linux desktop application for managing **Inferno** – a Dante/AES67 virtual s
 | inferno | (built from source) | ALSA plugin for Dante/AES67 |
 | linuxptp tools | Optional | ptp4l alternative |
 
+> **Installation script requirements:** Debian/Ubuntu-based (Linux Mint tested). Uses `apt` package manager and Debian-style library paths.
+
 ## Installation
+
+### Supported Distributions
+
+> ⚠️ **Note:** The installation script (`install_inferno.sh`) is designed for **Debian/Ubuntu-based distributions** (tested on **Linux Mint**). It uses `apt` for package management and assumes Debian-style paths (e.g., `/usr/lib/x86_64-linux-gnu/alsa-lib/`). For other distributions (Arch, Fedora, openSUSE, etc.), you'll need to adapt the package names and paths manually.
 
 ### 1. Install Inferno & statime (one-time)
 
