@@ -343,6 +343,8 @@ EOF
         fi
     fi
 
+    # Step 15: Optional - Inferno GUI
+    step_optional_gui
     log_success "Installation complete!"
     show_summary
 }
@@ -1081,6 +1083,34 @@ step_optional_millisecond() {
             run_cmd "millisecond"
         fi
     fi
+}
+
+step_optional_gui() {
+    log_step "Step 15: Optional - Inferno GUI"
+    
+    if ! prompt_yes_no "Install Inferno GUI (PyQt6 control panel)?" "y"; then
+        log_info "Skipping Inferno GUI installation"
+        return 0
+    fi
+    
+    # Copy GUI source to audio-inferno folder
+    local gui_dest="$WORK_DIR/gui"
+    log_info "Copying GUI source to $gui_dest..."
+    if [ "$TEST_MODE" = false ]; then
+        rm -rf "$gui_dest"
+        cp -r "$(dirname "$0")/inferno_gui" "$gui_dest"
+        chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$gui_dest" 2>/dev/null || true
+    else
+        log_info "[TEST MODE] Would copy GUI to $gui_dest"
+    fi
+    
+    log_info "Installing Inferno GUI package from $gui_dest..."
+    if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+        run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'cd "$WORK_DIR/gui" && pip install -e .'"
+    else
+        run_cmd "cd "$WORK_DIR/gui" && pip install -e ."
+    fi
+    log_success "Inferno GUI installed to $gui_dest"
 }
 
 show_summary() {
