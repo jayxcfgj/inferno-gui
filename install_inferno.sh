@@ -912,6 +912,8 @@ step_optional_netaudio() {
                 log_info "Fixing cargo permissions for user $SUDO_USER_VAL..."
                 run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'mkdir -p "$ACTUAL_HOME/.cargo" && chown -R $SUDO_USER_VAL:$SUDO_USER_VAL "$ACTUAL_HOME/.cargo" 2>/dev/null || true'"
                 run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'mkdir -p "$ACTUAL_HOME/network-audio-controller" && chown -R $SUDO_USER_VAL:$SUDO_USER_VAL "$ACTUAL_HOME/network-audio-controller" 2>/dev/null || true'"
+                # Also fix target directory if it exists (cargo build creates it)
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'mkdir -p "$ACTUAL_HOME/network-audio-controller/target" && chown -R $SUDO_USER_VAL:$SUDO_USER_VAL "$ACTUAL_HOME/network-audio-controller/target" 2>/dev/null || true'"
             fi
             
             # Remove existing directory if present
