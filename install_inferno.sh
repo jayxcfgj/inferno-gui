@@ -829,7 +829,7 @@ EOF
 }
 
 step_optional_netaudio() {
-    log_step "Step 12: Optional - netaudio (Dante Controller)"
+    log_step "Step 12: Optional - netaudio (Dante Controller alternative)"
     
     if ! prompt_yes_no "Install netaudio for Dante network routing control?" "y"; then
         log_info "Skipping netaudio installation"
@@ -846,17 +846,23 @@ step_optional_netaudio() {
     fi
     
     log_info "netaudio installation options:"
-    echo "  1) Install via pip (pre-built Linux wheel from PyPI/GitHub releases)"
+    echo "  1) Install via pipx (recommended - isolated environment for CLI tools)"
     echo "  2) Build from source (requires Rust)"
     echo "  3) Skip installation"
     
     local choice
-    choice=$(prompt_select "Select installation method:" "pip install (recommended)" "Build from source" "Skip")
+    choice=$(prompt_select "Select installation method:" "pipx install (recommended)" "Build from source" "Skip")
     
     case "$choice" in
-        "pip install (recommended)")
-            log_info "Installing netaudio via pip (downloads pre-built Linux wheel)..."
-            run_cmd "pip install --upgrade netaudio"
+        "pipx install (recommended)")
+            log_info "Installing netaudio via pipx (isolated environment)..."
+            # Ensure pipx is installed
+            if ! command -v pipx &> /dev/null; then
+                log_info "pipx not found, installing..."
+                run_cmd_sudo "apt-get install -y pipx"
+                run_cmd "pipx ensurepath"
+            fi
+            run_cmd "pipx install --force netaudio"
             log_info "netaudio includes CLI, daemon, and web UI"
             ;;
         "Build from source")
