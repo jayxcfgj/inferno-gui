@@ -657,10 +657,20 @@ step_configure_alsa() {
     rx_channels=$(prompt_input "RX channels (input from network)" "24")
     
     local bind_ip
+    # Auto-detect IP from interface, use as default
     if [ -n "$ip_addr" ]; then
-        bind_ip=$(prompt_input "Bind IP address" "$ip_addr")
+        bind_ip="$ip_addr"
+        log_info "Auto-detected bind IP for $iface: $bind_ip"
     else
-        bind_ip=$(prompt_input "Bind IP address (interface IP)" "$iface")
+        log_warn "No IP assigned to $iface, using interface name as bind address"
+        bind_ip="$iface"
+    fi
+    log_info "Note: This can be changed later by editing ~/.asoundrc"
+    # Allow override if needed
+    if prompt_yes_no "Use detected bind IP ($bind_ip)?" "y"; then
+        :  # Keep detected IP
+    else
+        bind_ip=$(prompt_input "Enter custom bind IP address" "$bind_ip")
     fi
     
     local device_name
