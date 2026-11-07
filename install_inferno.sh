@@ -35,11 +35,21 @@ NC='\033[0m' # No Color
 
 # Script configuration
 TEST_MODE=false
-WORK_DIR="$HOME/audio-inferno"
+
+# Determine actual user's home directory (handles sudo correctly)
+# Use parameter expansion to avoid 'unbound variable' error with set -u
+SUDO_USER_VAL="${SUDO_USER:-}"
+if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+    ACTUAL_HOME=$(getent passwd "$SUDO_USER_VAL" | cut -d: -f6 2>/dev/null || echo "$HOME")
+else
+    ACTUAL_HOME="$HOME"
+fi
+
+WORK_DIR="$ACTUAL_HOME/audio-inferno"
 INFERNO_DIR="$WORK_DIR/inferno"
 STATIME_DIR="$WORK_DIR/statime"
 ALSA_PLUGIN_DIR="/usr/lib/x86_64-linux-gnu/alsa-lib"
-ASOUNDRC="$HOME/.asoundrc"
+ASOUNDRC="$ACTUAL_HOME/.asoundrc"
 
 # Parse arguments
 for arg in "$@"; do
@@ -323,10 +333,10 @@ step_pipewire() {
         liblilv-dev libsord-dev libserd-dev libsratom-dev"
     
     log_step "Cloning and building PipeWire"
-    run_cmd "cd ~ && git clone https://gitlab.freedesktop.org/pipewire/pipewire.git"
-    run_cmd "cd ~/pipewire && ./autogen.sh --prefix=/usr"
-    run_cmd "cd ~/pipewire && make -j$(nproc)"
-    run_cmd_sudo "cd ~/pipewire && make install"
+    run_cmd "cd "$ACTUAL_HOME" && git clone https://gitlab.freedesktop.org/pipewire/pipewire.git"
+    run_cmd "cd "$ACTUAL_HOME/pipewire" && ./autogen.sh --prefix=/usr"
+    run_cmd "cd "$ACTUAL_HOME/pipewire" && make -j$(nproc)"
+    run_cmd_sudo "cd "$ACTUAL_HOME/pipewire" && make install"
     
     log_step "Restarting PipeWire services"
     run_cmd "systemctl --user restart pipewire wireplumber"
@@ -806,9 +816,9 @@ step_optional_millisecond() {
     run_cmd_sudo "apt-get install -y libgtk-4-dev libadwaita-1-dev python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 adwaita-icon-theme"
     
     log_step "Building Millisecond from source"
-    run_cmd "cd ~ && git clone https://github.com/gaheldev/Millisecond.git"
-    run_cmd "cd ~/Millisecond && meson setup build/"
-    run_cmd_sudo "cd ~/Millisecond && meson install -C build/"
+    run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/gaheldev/Millisecond.git"
+    run_cmd "cd "$ACTUAL_HOME/Millisecond" && meson setup build/"
+    run_cmd_sudo "cd "$ACTUAL_HOME/Millisecond" && meson install -C build/"
     
     if prompt_yes_no "Run Millisecond now to optimize system?" "y"; then
         run_cmd "millisecond"
