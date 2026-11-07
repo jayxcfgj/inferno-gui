@@ -944,6 +944,22 @@ EOF
             run_cmd_sudo "systemctl daemon-reload"
             run_cmd_sudo "systemctl enable netaudio-daemon"
             run_cmd_sudo "systemctl start netaudio-daemon"
+            sleep 2
+            
+            # Show web UI address and offer to open browser
+            log_info "Getting netaudio daemon web interface address..."
+            local web_url
+            web_url=$(sudo -u "$SUDO_USER_VAL" XDG_RUNTIME_DIR=/run/user/$(id -u "$SUDO_USER_VAL") PATH="$ACTUAL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" netaudio daemon web 2>/dev/null | grep -oE 'https?://[^ ]+' | head -1)
+            if [ -n "$web_url" ]; then
+                log_success "netaudio web UI available at: $web_url"
+                if prompt_yes_no "Open netaudio web UI in default browser?" "y"; then
+                    log_info "Opening web UI in browser..."
+                    sudo -u "$SUDO_USER_VAL" XDG_RUNTIME_DIR=/run/user/$(id -u "$SUDO_USER_VAL") PATH="$ACTUAL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" netaudio daemon web --open
+                fi
+            else
+                log_warn "Could not determine web UI address. Default is usually http://localhost:8777"
+                log_info "Try running: netaudio daemon web"
+            fi
         fi
         log_success "netaudio-daemon installed and started"
     fi
