@@ -1059,8 +1059,12 @@ step_optional_millisecond() {
     run_cmd_sudo "cd "$ACTUAL_HOME/Millisecond" && meson install -C build/"
     
     if prompt_yes_no "Run Millisecond now to optimize system?" "y"; then
-        log_info "Running Millisecond (user permissions)..."
-        run_cmd "millisecond"
+        log_info "Running Millisecond as user $SUDO_USER_VAL..."
+        if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+            run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'millisecond'"
+        else
+            run_cmd "millisecond"
+        fi
     fi
 }
 
