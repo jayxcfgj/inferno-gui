@@ -417,6 +417,11 @@ step_pipewire() {
         liblilv-dev libsord-dev libserd-dev libsratom-dev"
     
     log_step "Cloning and building PipeWire"
+    # Remove existing directory to allow clean clone
+    if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/pipewire" ]; then
+        log_info "Removing existing pipewire directory..."
+        rm -rf "$ACTUAL_HOME/pipewire"
+    fi
     run_cmd "cd "$ACTUAL_HOME" && git clone https://gitlab.freedesktop.org/pipewire/pipewire.git"
     run_cmd "cd "$ACTUAL_HOME/pipewire" && ./autogen.sh --prefix=/usr"
     run_cmd "cd "$ACTUAL_HOME/pipewire" && make -j$(nproc)"
@@ -867,6 +872,11 @@ step_optional_netaudio() {
             ;;
         "Build from source")
             log_info "Building netaudio from source..."
+            # Remove existing directory if present
+            if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/network-audio-controller" ]; then
+                log_info "Removing existing network-audio-controller directory..."
+                rm -rf "$ACTUAL_HOME/network-audio-controller"
+            fi
             run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/chris-ritsen/network-audio-controller.git"
             run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && cargo install --path ."
             log_info "Built from source (requires Rust toolchain)"
@@ -971,6 +981,11 @@ step_optional_millisecond() {
     run_cmd_sudo "apt-get install -y libgtk-4-dev libadwaita-1-dev python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 adwaita-icon-theme"
     
     log_step "Building Millisecond from source"
+    # Remove existing directory if present
+    if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/Millisecond" ]; then
+        log_info "Removing existing Millisecond directory..."
+        rm -rf "$ACTUAL_HOME/Millisecond"
+    fi
     run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/gaheldev/Millisecond.git"
     run_cmd "cd "$ACTUAL_HOME/Millisecond" && meson setup build/"
     run_cmd_sudo "cd "$ACTUAL_HOME/Millisecond" && meson install -C build/"
