@@ -907,6 +907,13 @@ step_optional_netaudio() {
             log_info "Installing build dependencies for netaudio (JACK, ALSA, PulseAudio)..."
             run_cmd_sudo "apt-get install -y libjack-jackd2-dev libasound2-dev libpulse-dev libdbus-1-dev pkg-config"
             
+            # Fix cargo permissions for the actual user
+            if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+                log_info "Fixing cargo permissions for user $SUDO_USER_VAL..."
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'mkdir -p "$ACTUAL_HOME/.cargo" && chown -R $SUDO_USER_VAL:$SUDO_USER_VAL "$ACTUAL_HOME/.cargo" 2>/dev/null || true'"
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'mkdir -p "$ACTUAL_HOME/network-audio-controller" && chown -R $SUDO_USER_VAL:$SUDO_USER_VAL "$ACTUAL_HOME/network-audio-controller" 2>/dev/null || true'"
+            fi
+            
             # Remove existing directory if present
             if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/network-audio-controller" ]; then
                 log_info "Removing existing network-audio-controller directory..."
