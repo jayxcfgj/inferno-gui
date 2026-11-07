@@ -73,7 +73,7 @@ run_cmd() {
         return 0
     else
         log_info "Running: $*"
-        eval "$@"
+        bash -c "$*"
     fi
 }
 
@@ -83,7 +83,7 @@ run_cmd_sudo() {
         return 0
     else
         log_info "Running (sudo): $*"
-        sudo eval "$@"
+        sudo bash -c "$*"
     fi
 }
 
@@ -91,6 +91,15 @@ prompt_yes_no() {
     local prompt="$1"
     local default="${2:-y}"
     local response
+    
+    if [ "$TEST_MODE" = true ]; then
+        # In test mode, always use default
+        echo "$prompt [Y/n]: $default (auto-selected in test mode)" >&2
+        case $default in
+            [Yy]*) return 0 ;;
+            [Nn]*) return 1 ;;
+        esac
+    fi
     
     if [ "$default" = "y" ]; then
         prompt="$prompt [Y/n]: "
@@ -104,7 +113,7 @@ prompt_yes_no() {
         case $response in
             [Yy]*) return 0 ;;
             [Nn]*) return 1 ;;
-            *) echo "Please answer yes or no." ;;
+            *) echo "Please answer yes or no." >&2 ;;
         esac
     done
 }
@@ -115,9 +124,20 @@ prompt_select() {
     local options=("$@")
     local response
     
-    echo "$prompt"
+    if [ "$TEST_MODE" = true ]; then
+        # In test mode, auto-select first option
+        echo "$prompt" >&2
+        for i in "${!options[@]}"; do
+            echo "  $((i+1))) ${options[i]}" >&2
+        done
+        echo "Select option [1-${#options[@]}]: 1 (auto-selected in test mode)" >&2
+        echo "${options[0]}"
+        return 0
+    fi
+    
+    echo "$prompt" >&2
     for i in "${!options[@]}"; do
-        echo "  $((i+1))) ${options[i]}"
+        echo "  $((i+1))) ${options[i]}" >&2
     done
     
     while true; do
@@ -126,7 +146,7 @@ prompt_select() {
             echo "${options[$((response-1))]}"
             return 0
         fi
-        echo "Invalid selection. Please enter a number between 1 and ${#options[@]}."
+        echo "Invalid selection. Please enter a number between 1 and ${#options[@]}." >&2
     done
 }
 
@@ -134,6 +154,18 @@ prompt_input() {
     local prompt="$1"
     local default="${2:-}"
     local response
+    
+    if [ "$TEST_MODE" = true ]; then
+        # In test mode, use default
+        if [ -n "$default" ]; then
+            echo "$prompt [$default]: $default (auto-selected in test mode)" >&2
+            echo "$default"
+        else
+            echo "$prompt: (auto-skipped in test mode)" >&2
+            echo ""
+        fi
+        return 0
+    fi
     
     if [ -n "$default" ]; then
         read -rp "$prompt [$default]: " response
@@ -238,7 +270,13 @@ step_pipewire() {
     log_step "Step 2: PipeWire Version Check"
     
     local pw_version
-    pw_version=$(pipewire --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    if [ "$TEST_MODE" = true ]; then
+        # In test mode, simulate an older version to test the build flow
+        pw_version="0.3"
+        log_info "[TEST MODE] Simulating PipeWire version: $pw_version"
+    else
+        pw_version=$(pipewire --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    fi
     
     if [ -z "$pw_version" ]; then
         log_warn "PipeWire not found"
@@ -294,7 +332,12 @@ step_pipewire() {
     sleep 2
     
     local new_version
-    new_version=$(pipewire --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    if [ "$TEST_MODE" = true ]; then
+        new_version="1.2"
+        log_info "[TEST MODE] Simulating PipeWire version: $new_version"
+    else
+        new_version=$(pipewire --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    fi
     log_success "PipeWire updated to version: $new_version"
 }
 
@@ -321,7 +364,11 @@ step_rust() {
     # Add to current shell
     export PATH="$HOME/.cargo/bin:$PATH"
     
-    log_success "Rust installed: $(cargo --version)"
+    if [ "$TEST_MODE" = true ]; then
+        log_success "Rust installed: cargo 1.80.0 (simulated)"
+    else
+        log_success "Rust installed: $(cargo --version)"
+    fi
 }
 
 step_build_statime_inferno() {
@@ -339,9 +386,13 @@ step_build_statime_inferno() {
     log_step "Building statime..."
     run_cmd "cd \"$STATIME_DIR\" && cargo build"
     
-    if [ -f "$STATIME_DIR/target/debug/statime" ]; then
+    if [ "$TEST_MODE" = true ] || [ -f "$STATIME_DIR/target/debug/statime" ]; then
         log_success "statime built successfully"
-        ls -lh "$STATIME_DIR/target/debug/statime"
+        if [ "$TEST_MODE" = false ]; then
+            ls -lh "$STATIME_DIR/target/debug/statime"
+        else
+            echo "[TEST MODE] Simulated binary at $STATIME_DIR/target/debug/statime"
+        fi
     else
         log_error "statime build failed - binary not found"
         exit 1
@@ -352,20 +403,27 @@ step_network_interface() {
     log_step "Step 6: Network Interface Selection"
     
     log_info "Available network interfaces:"
-    ip -br addr | grep -v "lo " | while read -r line; do
-        echo "  $line"
-    done
-    
-    # Get list of interfaces (excluding loopback)
-    local interfaces=()
-    while IFS= read -r line; do
-        iface=$(echo "$line" | awk '{print $1}')
-        [ -n "$iface" ] && interfaces+=("$iface")
-    done < <(ip -br link | grep -v "lo " | awk '{print $1}')
-    
-    if [ ${#interfaces[@]} -eq 0 ]; then
-        log_error "No network interfaces found (excluding loopback)"
-        exit 1
+    if [ "$TEST_MODE" = true ]; then
+        # Simulate interfaces in test mode
+        echo "  eth0  UP  192.168.1.100/24"
+        echo "  enp3s0  UP  10.0.0.50/24"
+        interfaces=("eth0" "enp3s0")
+    else
+        ip -br addr | grep -v "lo " | while read -r line; do
+            echo "  $line"
+        done
+        
+        # Get list of interfaces (excluding loopback)
+        local interfaces=()
+        while IFS= read -r line; do
+            iface=$(echo "$line" | awk '{print $1}')
+            [ -n "$iface" ] && interfaces+=("$iface")
+        done < <(ip -br link | grep -v "lo " | awk '{print $1}')
+        
+        if [ ${#interfaces[@]} -eq 0 ]; then
+            log_error "No network interfaces found (excluding loopback)"
+            exit 1
+        fi
     fi
     
     echo
@@ -373,10 +431,13 @@ step_network_interface() {
     log_success "Selected interface: $SELECTED_IFACE"
     
     # Get IP address for selected interface
-    SELECTED_IP=$(ip -br addr show "$SELECTED_IFACE" 2>/dev/null | awk '{print $3}' | cut -d/ -f1 | head -1)
+    SELECTED_IP=$(ip -br addr show "$SELECTED_IFACE" 2>/dev/null | awk '{print $3}' | cut -d/ -f1 | head -1) || true
     log_info "IP address for $SELECTED_IFACE: ${SELECTED_IP:-"(not assigned)"}"
     
     # Save for later steps
+    if [ "$TEST_MODE" = true ]; then
+        mkdir -p "$WORK_DIR"
+    fi
     echo "$SELECTED_IFACE" > "$WORK_DIR/selected_interface.txt"
     echo "$SELECTED_IP" > "$WORK_DIR/selected_ip.txt"
 }
@@ -439,9 +500,13 @@ step_build_inferno_plugin() {
     run_cmd "cd \"$INFERNO_DIR/alsa_pcm_inferno\" && cargo build"
     
     local plugin_path="$INFERNO_DIR/target/debug/libasound_module_pcm_inferno.so"
-    if [ -f "$plugin_path" ]; then
+    if [ "$TEST_MODE" = true ] || [ -f "$plugin_path" ]; then
         log_success "inferno ALSA plugin built successfully"
-        ls -lh "$plugin_path"
+        if [ "$TEST_MODE" = false ]; then
+            ls -lh "$plugin_path"
+        else
+            echo "[TEST MODE] Simulated binary at $plugin_path"
+        fi
     else
         log_error "inferno plugin build failed - binary not found at $plugin_path"
         exit 1
@@ -472,6 +537,8 @@ step_install_alsa_plugin() {
                 break
             fi
         done
+    elif [ "$TEST_MODE" = true ]; then
+        log_info "[TEST MODE] Using default ALSA plugin directory: $ALSA_PLUGIN_DIR"
     fi
     
     run_cmd_sudo "ln -sf \"$plugin_src\" \"$plugin_dst\""
@@ -486,6 +553,14 @@ step_install_alsa_plugin() {
         fi
     else
         log_success "[DRY-RUN] Would install ALSA plugin to $plugin_dst"
+    fi
+    
+    # Test plugin listing
+    log_info "Testing ALSA plugin detection..."
+    if [ "$TEST_MODE" = true ]; then
+        run_cmd "aplay -L | grep -i inferno"
+    else
+        run_cmd "aplay -L | grep -i inferno"
     fi
     
     # Test plugin listing
@@ -611,7 +686,11 @@ step_optional_netaudio() {
     # Daemon setup
     if prompt_yes_no "Set up netaudio-daemon as systemd service (auto-start)?" "y"; then
         local service_file="/etc/systemd/system/netaudio-daemon.service"
-        cat > "$service_file" << 'EOF'
+        if [ "$TEST_MODE" = true ]; then
+            log_info "[TEST MODE] Would create systemd service: $service_file"
+            log_info "[TEST MODE] Would run: systemctl daemon-reload && systemctl enable netaudio-daemon && systemctl start netaudio-daemon"
+        else
+            cat > "$service_file" << 'EOF'
 [Unit]
 Description=netaudio daemon for Dante/AES67 control
 After=network.target pipewire.service
@@ -626,9 +705,10 @@ User=%i
 [Install]
 WantedBy=multi-user.target
 EOF
-        run_cmd_sudo "systemctl daemon-reload"
-        run_cmd_sudo "systemctl enable netaudio-daemon"
-        run_cmd_sudo "systemctl start netaudio-daemon"
+            run_cmd_sudo "systemctl daemon-reload"
+            run_cmd_sudo "systemctl enable netaudio-daemon"
+            run_cmd_sudo "systemctl start netaudio-daemon"
+        fi
         log_success "netaudio-daemon installed and started"
     fi
 }
