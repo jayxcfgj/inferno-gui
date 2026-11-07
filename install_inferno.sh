@@ -888,8 +888,9 @@ step_optional_netaudio() {
                 rm -rf "$ACTUAL_HOME/network-audio-controller"
             fi
             run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/chris-ritsen/network-audio-controller.git"
-            run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && cargo install --path ."
-            log_info "Built from source (requires Rust toolchain)"
+            # netaudio is a Python package with Rust extensions, built with hatch
+            run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && pip install --upgrade pip setuptools wheel hatchling && pip install --no-build-isolation ."
+            log_info "Built from source (requires Rust toolchain and Python build tools)"
             ;;
         "Skip")
             log_info "Skipping netaudio installation"
