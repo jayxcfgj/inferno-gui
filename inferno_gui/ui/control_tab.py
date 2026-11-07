@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QGridLayout, QCheckBox, QProgressBar
+    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox
 )
 from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QDesktopServices
