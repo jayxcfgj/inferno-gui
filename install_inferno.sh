@@ -921,7 +921,12 @@ step_optional_netaudio() {
                 log_info "Removing existing network-audio-controller directory..."
                 rm -rf "$ACTUAL_HOME/network-audio-controller"
             fi
-            run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/chris-ritsen/network-audio-controller.git"
+            # Run git clone as actual user to avoid permission issues
+            if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'cd "$ACTUAL_HOME" && git clone https://github.com/chris-ritsen/network-audio-controller.git'"
+            else
+                run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/chris-ritsen/network-audio-controller.git"
+            fi
             # Build and install with pipx (avoids externally-managed-environment)
             # First ensure pipx is available
             if ! command -v pipx &> /dev/null; then
