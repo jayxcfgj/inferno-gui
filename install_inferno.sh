@@ -428,6 +428,7 @@ step_network_interface() {
     fi
     
     echo
+    log_info "Note: This can be changed later in the statime config files or by re-running the script."
     SELECTED_IFACE=$(prompt_select "Select the network interface for Dante/PTP:" "${interfaces[@]}")
     log_success "Selected interface: $SELECTED_IFACE"
     
@@ -443,15 +444,58 @@ step_network_interface() {
     echo "$SELECTED_IP" > "$WORK_DIR/selected_ip.txt"
 }
 
+# Create default statime config file if missing
+create_statime_config() {
+    local config_file="$1"
+    local ptp_version="$2"
+    
+    if [[ "$ptp_version" == "v1" ]]; then
+        cat > "$config_file" << 'TOMLEOF'
+# statime PTPv1 configuration for Inferno
+# IEEE 1588-2002
+
+[global]
+domain = 0
+interface = "eth0"
+log_level = "info"
+
+[port]
+sync_interval = 0
+announce_interval = 1
+announce_receipt_timeout = 3
+delay_mechanism = "E2E"
+TOMLEOF
+    else
+        cat > "$config_file" << 'TOMLEOF'
+# statime PTPv2 configuration for Inferno
+# IEEE 1588-2008
+
+[global]
+domain = 0
+interface = "eth0"
+log_level = "info"
+two_step_flag = true
+
+[port]
+sync_interval = 0
+announce_interval = 1
+announce_receipt_timeout = 3
+delay_mechanism = "E2E"
+TOMLEOF
+    fi
+    log_success "Created default $config_file"
+}
+
 step_configure_statime() {
     log_step "Step 7: Configuring statime (PTP)"
     
     local iface
     iface=$(cat "$WORK_DIR/selected_interface.txt")
     
-    # PTP version selection
+    # PTP version selection - no default recommendation
     local ptp_version
-    ptp_version=$(prompt_select "Select PTP version for clock synchronization:" "PTPv2 (IEEE 1588-2008, recommended)" "PTPv1 (IEEE 1588-2002)")
+    log_info "Note: This can be changed later by re-running the script or editing the statime config files."
+    ptp_version=$(prompt_select "Select PTP version for clock synchronization:" "PTPv1 (IEEE 1588-2002)" "PTPv2 (IEEE 1588-2008)")
     
     if [[ "$ptp_version" == "PTPv1"* ]]; then
         CONFIG_FILE="inferno-ptpv1.toml"
@@ -464,6 +508,12 @@ step_configure_statime() {
     log_info "Configuring $CONFIG_FILE for interface $iface..."
     
     run_cmd "cd \"$STATIME_DIR\""
+    
+    # Ensure config file exists (create from template if needed)
+    if [ "$TEST_MODE" = false ] && [ ! -f "$CONFIG_FILE" ]; then
+        log_info "Config file $CONFIG_FILE not found, creating default..."
+        create_statime_config "$CONFIG_FILE" "$PTP_VERSION_FLAG"
+    fi
     
     # Update interface in config file
     if [ "$TEST_MODE" = true ]; then
@@ -579,6 +629,7 @@ step_configure_alsa() {
     
     echo
     log_info "Configure inferno audio parameters:"
+    log_info "Note: These can be changed later by editing ~/.asoundrc"
     
     local sample_rate
     sample_rate=$(prompt_input "Sample rate" "48000")

@@ -124,7 +124,7 @@ Following the **Sync67** design principles:
 ## Credits
 
 - **Inferno & statime**: by [teodly](https://github.com/teodly) – the core audio/PTP implementation
-- **GUI**: by jacob – MIT licensed
+- **GUI**: by jayxcfgj – MIT licensed
 - **Inspired by**: [Sync67](https://github.com/jayxcfgj/sync67) by jayxcfgj
 
 ## License
