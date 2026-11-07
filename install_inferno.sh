@@ -875,9 +875,15 @@ step_optional_netaudio() {
             if ! command -v pipx &> /dev/null; then
                 log_info "pipx not found, installing..."
                 run_cmd_sudo "apt-get install -y pipx"
-                run_cmd "pipx ensurepath"
             fi
-            run_cmd "pipx install --force netaudio"
+            # Run pipx as actual user to install to correct location (~/.local/bin)
+            if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'pipx ensurepath'"
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'pipx install --force netaudio'"
+            else
+                run_cmd "pipx ensurepath"
+                run_cmd "pipx install --force netaudio"
+            fi
             log_info "netaudio includes CLI, daemon, and web UI"
             ;;
         "Build from source")
