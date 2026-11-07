@@ -920,11 +920,12 @@ step_optional_netaudio() {
                 run_cmd_sudo "apt-get install -y pipx"
             fi
             # Run pipx as actual user to install to correct location
+            # Include Cargo PATH for building Rust extensions
             if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
-                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'pipx ensurepath'"
-                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'cd "$ACTUAL_HOME/network-audio-controller" && pipx install --force .'"
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'source "$ACTUAL_HOME/.cargo/env" && export PATH="\$ACTUAL_HOME/.cargo/bin:\$PATH" && pipx ensurepath'"
+                run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'source "$ACTUAL_HOME/.cargo/env" && export PATH="\$ACTUAL_HOME/.cargo/bin:\$PATH" && cd "$ACTUAL_HOME/network-audio-controller" && pipx install --force .'"
             else
-                run_cmd "pipx ensurepath"
+                run_cmd "source "$ACTUAL_HOME/.cargo/env" && export PATH="$ACTUAL_HOME/.cargo/bin:\$PATH" && pipx ensurepath"
                 run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && pipx install --force ."
             fi
             log_info "Built and installed from source via pipx (isolated environment)"
