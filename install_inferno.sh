@@ -945,7 +945,7 @@ step_optional_netaudio() {
         elif [ -f "$ACTUAL_HOME/.local/bin/netaudio" ]; then
             # netaudio might have daemon as subcommand
             netaudio_daemon_path="$ACTUAL_HOME/.local/bin/netaudio"
-            netaudio_daemon_args="daemon"
+            netaudio_daemon_args="daemon run"
         elif command -v netaudio-daemon &> /dev/null; then
             netaudio_daemon_path=$(command -v netaudio-daemon)
         else
