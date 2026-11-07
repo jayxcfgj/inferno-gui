@@ -700,6 +700,16 @@ step_install_alsa_plugin() {
         log_info "[TEST MODE] Using default ALSA plugin directory: $ALSA_PLUGIN_DIR"
     fi
     
+    # Remove any existing inferno plugin (symlink or regular file) before installing new one
+    if [ "$TEST_MODE" = false ]; then
+        if [ -L "$plugin_dst" ] || [ -f "$plugin_dst" ]; then
+            log_info "Removing existing inferno ALSA plugin at $plugin_dst"
+            run_cmd_sudo "rm -f \"$plugin_dst\""
+        fi
+    else
+        log_info "[TEST MODE] Would remove existing ALSA plugin at $plugin_dst"
+    fi
+    
     run_cmd_sudo "ln -sf \"$plugin_src\" \"$plugin_dst\""
     
     if [ "$TEST_MODE" = false ]; then
