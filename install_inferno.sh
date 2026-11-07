@@ -886,8 +886,8 @@ step_optional_netaudio() {
             if ! command -v cargo &> /dev/null; then
                 log_warn "Rust/Cargo not found. Installing Rust toolchain for user $SUDO_USER_VAL..."
                 if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
-                    # Use -H to set HOME correctly for the target user
-                    run_cmd_sudo "sudo -H -u $SUDO_USER_VAL curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+                    # Run entire pipeline as target user (wrap in bash -c to ensure pipe runs as user)
+                    run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'"
                     run_cmd_sudo "sudo -H -u $SUDO_USER_VAL bash -c 'source "$ACTUAL_HOME/.cargo/env" && export PATH="$ACTUAL_HOME/.cargo/bin:\$PATH"'"
                     export PATH="$ACTUAL_HOME/.cargo/bin:$PATH"
                 else
