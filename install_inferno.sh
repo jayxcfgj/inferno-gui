@@ -884,10 +884,16 @@ step_optional_netaudio() {
             log_info "Building netaudio from source..."
             # Check for Rust/Cargo (required for building)
             if ! command -v cargo &> /dev/null; then
-                log_warn "Rust/Cargo not found. Installing Rust toolchain..."
-                run_cmd "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
-                run_cmd "source "$ACTUAL_HOME/.cargo/env""
-                export PATH="$ACTUAL_HOME/.cargo/bin:$PATH"
+                log_warn "Rust/Cargo not found. Installing Rust toolchain for user $SUDO_USER_VAL..."
+                if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+                    run_cmd_sudo "sudo -u $SUDO_USER_VAL curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+                    run_cmd_sudo "sudo -u $SUDO_USER_VAL source "$ACTUAL_HOME/.cargo/env" && export PATH="$ACTUAL_HOME/.cargo/bin:\$PATH""
+                    export PATH="$ACTUAL_HOME/.cargo/bin:$PATH"
+                else
+                    run_cmd "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+                    run_cmd "source "$ACTUAL_HOME/.cargo/env""
+                    export PATH="$ACTUAL_HOME/.cargo/bin:$PATH"
+                fi
             fi
             
             # Remove existing directory if present
