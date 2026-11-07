@@ -1097,15 +1097,21 @@ step_optional_gui() {
         return 0
     fi
     
-    # Copy GUI source to audio-inferno folder
+    # Copy GUI source and project files to audio-inferno folder
     local gui_dest="$WORK_DIR/gui"
-    log_info "Copying GUI source to $gui_dest..."
+    log_info "Copying GUI source and project files to $gui_dest..."
     if [ "$TEST_MODE" = false ]; then
         rm -rf "$gui_dest"
-        cp -r "$(dirname "$0")/inferno_gui" "$gui_dest"
+        mkdir -p "$gui_dest"
+        # Copy the inferno_gui package
+        cp -r "$(dirname "$0")/inferno_gui" "$gui_dest/"
+        # Copy project files needed for pip install (pyproject.toml, README.md, LICENSE)
+        cp "$(dirname "$0")/pyproject.toml" "$gui_dest/"
+        cp "$(dirname "$0")/README.md" "$gui_dest/"
+        cp "$(dirname "$0")/LICENSE" "$gui_dest/"
         chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$gui_dest" 2>/dev/null || true
     else
-        log_info "[TEST MODE] Would copy GUI to $gui_dest"
+        log_info "[TEST MODE] Would copy GUI and project files to $gui_dest"
     fi
     
     log_info "Installing Inferno GUI package from $gui_dest..."
