@@ -888,9 +888,16 @@ step_optional_netaudio() {
                 rm -rf "$ACTUAL_HOME/network-audio-controller"
             fi
             run_cmd "cd "$ACTUAL_HOME" && git clone https://github.com/chris-ritsen/network-audio-controller.git"
-            # netaudio is a Python package with Rust extensions, built with hatch
-            run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && pip install --upgrade pip setuptools wheel hatchling && pip install --no-build-isolation ."
-            log_info "Built from source (requires Rust toolchain and Python build tools)"
+            # Build and install with pipx (avoids externally-managed-environment)
+            # First ensure pipx is available
+            if ! command -v pipx &> /dev/null; then
+                log_info "pipx not found, installing..."
+                run_cmd_sudo "apt-get install -y pipx"
+                run_cmd "pipx ensurepath"
+            fi
+            # Install from local source using pipx (isolated environment)
+            run_cmd "cd "$ACTUAL_HOME/network-audio-controller" && pipx install --force ."
+            log_info "Built and installed from source via pipx (isolated environment)"
             ;;
         "Skip")
             log_info "Skipping netaudio installation"
