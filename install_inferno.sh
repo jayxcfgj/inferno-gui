@@ -1059,47 +1059,52 @@ step_optional_millisecond() {
     run_cmd_sudo "cd "$ACTUAL_HOME/Millisecond" && meson install -C build/"
     
     if prompt_yes_no "Run Millisecond now to optimize system?" "y"; then
-        log_info "Running Millisecond with sudo (requires root for system tuning)..."
-        run_cmd_sudo "millisecond"
+        log_info "Running Millisecond (user permissions)..."
+        run_cmd "millisecond"
     fi
 }
 
 show_summary() {
     log_step "Installation Summary"
     
-    cat << EOF
-
-${GREEN}✓ Installation Complete!${NC}
-
-${CYAN}Next Steps:${NC}
-1. ${YELLOW}Reboot or re-login${NC} to ensure all PipeWire changes take effect
-2. Start statime (PTP daemon):
-   ${BLUE}$WORK_DIR/start-statime.sh${NC}
-3. Verify inferno device appears:
-   ${BLUE}aplay -L | grep inferno${NC}
-4. In your audio software (DAW, etc.), select "Inferno" as audio device
-5. Use netaudio-web (if installed) for Dante routing: http://localhost:8080
-
-${CYAN}Configuration Files:${NC}
-  • statime config: $STATIME_DIR/$(cat "$WORK_DIR/statime_config.txt" 2>/dev/null || echo "inferno-ptpv2.toml")
-  • ALSA config: $ASOUNDRC
-  • PipeWire override: $ACTUAL_HOME/.config/systemd/user/pipewire.service.d/override.conf
-  • Selected interface: $(cat "$WORK_DIR/selected_interface.txt" 2>/dev/null || echo "N/A")
-  • PTP version: $(cat "$WORK_DIR/ptp_version.txt" 2>/dev/null || echo "v2")
-
-${CYAN}Useful Commands:${NC}
-  • Start PTP:     $WORK_DIR/start-statime.sh
-  • Test ALSA:     aplay -L | grep inferno
-  • PipeWire logs: journalctl --user -u pipewire -f
-  • netaudio web:  http://localhost:8080 (if installed)
-
-${YELLOW}For realtime performance:${NC}
-  • Run 'millisecond' to tune system settings
-  • Ensure your user is in 'realtime' group: sudo usermod -a -G realtime \$USER
-  • Check /etc/security/limits.d/audio.conf for realtime limits
-
-EOF
+    echo "Installation Complete!"
+    echo ""
+    echo "Next Steps:"
+    if [ "$install_inferno" = "true" ]; then
+        echo "1. Reboot or re-login to ensure all PipeWire changes take effect"
+        echo "2. Start statime (PTP daemon): $WORK_DIR/start-statime.sh"
+        echo "3. Verify inferno device appears: aplay -L | grep inferno"
+        echo "4. In your audio software (DAW, etc.), select "Inferno" as audio device"
+    fi
+    if [ "$install_netaudio" = "true" ]; then
+        echo "5. Use netaudio-web for Dante routing: http://localhost:8080"
+    fi
+    echo ""
+    if [ "$install_inferno" = "true" ]; then
+        echo "Configuration Files:"
+        echo "  - statime config: $STATIME_DIR/$(cat "$WORK_DIR/statime_config.txt" 2>/dev/null || echo "inferno-ptpv2.toml")"
+        echo "  - ALSA config: $ASOUNDRC"
+        echo "  - PipeWire override: $ACTUAL_HOME/.config/systemd/user/pipewire.service.d/override.conf"
+        echo "  - Selected interface: $(cat "$WORK_DIR/selected_interface.txt" 2>/dev/null || echo "N/A")"
+        echo "  - PTP version: $(cat "$WORK_DIR/ptp_version.txt" 2>/dev/null || echo "v2")"
+        echo ""
+        echo "Useful Commands:"
+        echo "  - Start PTP:     $WORK_DIR/start-statime.sh"
+        echo "  - Test ALSA:     aplay -L | grep inferno"
+        echo "  - PipeWire logs: journalctl --user -u pipewire -f"
+    fi
+    if [ "$install_netaudio" = "true" ]; then
+        echo "  - netaudio web:  http://localhost:8080"
+    fi
+    echo ""
+    echo "For realtime performance:"
+    echo "  - Run 'millisecond' to tune system settings"
+    echo "  - Ensure your user is in 'realtime' group: sudo usermod -a -G realtime \$USER"
+    echo "  - Check /etc/security/limits.d/audio.conf for realtime limits"
 }
+
+# Run main
+main "$@"
 
 # Run main
 main "$@"
