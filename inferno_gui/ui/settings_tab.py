@@ -155,33 +155,39 @@ class SettingsTab(QWidget):
         # PipeWire override
         pw_override_path = Path.home() / ".config/systemd/user/pipewire.service.d/override.conf"
         self.pw_override_btn = QPushButton("📝 Open PipeWire Override")
+        self.pw_override_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
         self.pw_override_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(pw_override_path)))
         )
-        config_layout.addWidget(self.pw_override_btn)
         
         # PTPv1 config
         ptpv1_path = get_default_statime_config('v1')
         self.ptpv1_btn = QPushButton("📝 Open PTPv1 Config")
+        self.ptpv1_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
         self.ptpv1_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv1_path)))
         )
-        config_layout.addWidget(self.ptpv1_btn)
         
         # PTPv2 config
         ptpv2_path = get_default_statime_config('v2')
         self.ptpv2_btn = QPushButton("📝 Open PTPv2 Config")
+        self.ptpv2_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
         self.ptpv2_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv2_path)))
         )
-        config_layout.addWidget(self.ptpv2_btn)
         
         # ALSA config
-        # Use os.getlogin() which returns the actual logged-in user (works with sudo)
+        # Use a robust approach to get the actual user's home directory
         try:
-            alsa_rc_path = Path(pwd.getpwnam(os.getlogin()).pw_dir) / ".asoundrc"
+            import pwd
+            user_home = pwd.getpwnam(os.getlogin()).pw_dir
         except Exception:
-            alsa_rc_path = Path.home() / ".asoundrc"
+            import os
+            user = os.environ.get('SUDO_USER') or os.environ.get('USER') or os.environ.get('LOGNAME') or os.getlogin()
+            user_home = Path(f"/home/{user}") if user != 'root' else Path.home()
+        else:
+            user_home = Path.home()
+        alsa_rc_path = Path(user_home) / ".asoundrc"
         self.asoundrc_btn = QPushButton("📝 Open ~/.asoundrc")
         self.asoundrc_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))

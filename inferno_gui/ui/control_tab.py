@@ -185,6 +185,7 @@ class ControlTab(QWidget):
         inf_status_row.addStretch()
         
         self.netaudio_btn = QPushButton("🌐 Open NetAudio Web UI")
+        self.netaudio_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
         self.netaudio_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3; color: white;
@@ -193,7 +194,6 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #1976D2; }
         """)
-        self.netaudio_btn.clicked.connect(self._open_netaudio)
         self.netaudio_btn.setEnabled(False)  # Enable when running
         inf_status_row.addWidget(self.netaudio_btn)
         inferno_layout.addLayout(inf_status_row)
@@ -201,6 +201,7 @@ class ControlTab(QWidget):
         # Additional tools row
         tools_row = QHBoxLayout()
         self.qpwgraph_btn = QPushButton("📊 Open qpwgraph")
+        self.qpwgraph_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
         self.qpwgraph_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9C27B0; color: white;
@@ -209,10 +210,10 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #7B1FA2; }
         """)
-        self.qpwgraph_btn.clicked.connect(self._open_qpwgraph)
         tools_row.addWidget(self.qpwgraph_btn)
         
         self.cable_btn = QPushButton("🔗 Open Cable")
+        self.cable_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon))
         self.cable_btn.setStyleSheet("""
             QPushButton {
                 background-color: #FF9800; color: white;
@@ -221,7 +222,6 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #F57C00; }
         """)
-        self.cable_btn.clicked.connect(self._open_cable)
         tools_row.addWidget(self.cable_btn)
         
         tools_row.addStretch()
