@@ -65,7 +65,7 @@ STATIME_PATTERNS = [
     },
     {
         'key': 'delay',
-        'pattern': re.compile(r'delay\s+(\d+\.?\d*)'),
+        'pattern': re.compile(r'delay\s+(-?\d+\.?\d*)'),
         'severity': LogSeverity.INFO,
     },
     # State transitions
@@ -180,7 +180,7 @@ class StatimeLogParser:
                         pass
                 elif pat_info['key'] == 'freq_ppb':
                     try:
-                        entry.freq_ppb = int(float(match.group(1)))
+                        entry.freq_ppb = round(float(match.group(1)))
                     except (ValueError, IndexError):
                         pass
                 elif pat_info['key'] in ('path_delay', 'delay'):

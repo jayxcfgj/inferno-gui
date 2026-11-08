@@ -382,7 +382,7 @@ SystemCallFilter=@clock
 
     def load_settings(self):
         """Load settings from config files and QSettings."""
-        settings = QSettings("InfernoGUI", "settings")
+        settings = QSettings("InfernoGUI", "control")  # Use same group as control tab
         
         # Load inferno config
         if self.inferno_config.load():
@@ -396,8 +396,9 @@ SystemCallFilter=@clock
                 self.bind_ip.setText(self.inferno_config.bind_ip)
         
         # Load interface selection
-        saved_iface = settings.value("interface", "", type=str)
-        self._refresh_interfaces()
+        saved_iface = settings.value("selected_interface", "", type=str)
+        # Don't call _refresh_interfaces here - it's already called in _init_ui
+        # Just restore the selection if we have a saved interface
         if saved_iface:
             idx = self.iface_combo.findData(saved_iface)
             if idx >= 0:
@@ -418,7 +419,7 @@ SystemCallFilter=@clock
 
     def save_settings(self):
         """Save all settings to config files."""
-        settings = QSettings("InfernoGUI", "settings")
+        settings = QSettings("InfernoGUI", "control")  # Use same group as control tab
         
         # Save inferno config
         self.inferno_config.set('name', self.device_name.text())
@@ -431,7 +432,7 @@ SystemCallFilter=@clock
         # Save interface
         iface = self.iface_combo.currentData()
         if iface:
-            settings.setValue("interface", iface)
+            settings.setValue("selected_interface", iface)
         
         # Save PTP version
         ptp_ver = 'v1' if self.ptp_v1_radio.isChecked() else 'v2'

@@ -570,8 +570,9 @@ class ControlTab(QWidget):
         self._ptp_offset = status['offset_ns']
         self._ptp_freq = status['freq_ppb']
         
-        # Update labels
-        self.ptp_state_label.setText(f"State: {status['state']}")
+        # Update labels - show "Locked" instead of "SLAVE"
+        display_state = "Locked" if status['state'] == 'SLAVE' else status['state']
+        self.ptp_state_label.setText(f"State: {display_state}")
         
         if status['offset_ns'] is not None:
             self.ptp_offset_label.setText(f"Offset: {status['offset_ns']} ns")
@@ -611,7 +612,7 @@ class ControlTab(QWidget):
             label = "Uncalibrated"
             tip = "Uncalibrated – acquiring sync"
         elif state == 'SLAVE' and offset is not None:
-            label = f"Slave ({offset} ns)"
+            label = f"Locked ({offset} ns)"
             if offset <= 200:
                 color = "#4caf50"
                 tip = f"Sync: {offset}ns (excellent)"
