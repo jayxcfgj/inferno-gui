@@ -1,0 +1,13 @@
+# statime PTPv1 configuration for Inferno
+# IEEE 1588-2002
+
+[global]
+domain = 0
+interface = "enp37s0"
+log_level = "info"
+
+[port]
+sync_interval = 0
+announce_interval = 1
+announce_receipt_timeout = 3
+delay_mechanism = "E2E"

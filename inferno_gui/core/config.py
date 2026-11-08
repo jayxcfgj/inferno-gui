@@ -193,7 +193,14 @@ class StatimeConfig:
     
     def set_interface(self, interface: str):
         """Set the network interface in the config."""
-        # Try common locations
+        # Try to find and update interface in [[port]] array first
+        ports = self._data.get('port')
+        if isinstance(ports, list):
+            for port in ports:
+                if isinstance(port, dict) and 'interface' in port:
+                    port['interface'] = interface
+                    return
+        # Fallback: try common locations
         for key in ('global.interface', 'interface', 'port.interface'):
             if self.get(key) is not None:
                 self.set(key, interface)
