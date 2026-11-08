@@ -177,6 +177,7 @@ class SettingsTab(QWidget):
         config_layout.addWidget(self.ptpv2_btn)
         
         # ALSA config
+        alsa_rc_path = Path.home() / ".asoundrc"
         self.asoundrc_btn = QPushButton("📝 Open ~/.asoundrc")
         self.asoundrc_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
