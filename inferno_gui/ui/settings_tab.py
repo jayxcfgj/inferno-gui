@@ -6,7 +6,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QLineEdit,
-    QCheckBox, QScrollArea, QMessageBox, QGridLayout
+    QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont, QDesktopServices
@@ -159,6 +159,11 @@ class SettingsTab(QWidget):
         self.pw_override_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(pw_override_path)))
         )
+        config_layout.addWidget(self.pw_override_btn)
+        
+        self.pw_override_status = QLabel("Checking...")
+        self.pw_override_status.setStyleSheet("color: #aaa; font-size: 11px;")
+        config_layout.addWidget(self.pw_override_status)
         
         # PTPv1 config
         ptpv1_path = get_default_statime_config('v1')
@@ -167,6 +172,7 @@ class SettingsTab(QWidget):
         self.ptpv1_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv1_path)))
         )
+        config_layout.addWidget(self.ptpv1_btn)
         
         # PTPv2 config
         ptpv2_path = get_default_statime_config('v2')
@@ -175,6 +181,7 @@ class SettingsTab(QWidget):
         self.ptpv2_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv2_path)))
         )
+        config_layout.addWidget(self.ptpv2_btn)
         
         # ALSA config
         # Use a robust approach to get the actual user's home directory
@@ -193,6 +200,10 @@ class SettingsTab(QWidget):
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
         )
         config_layout.addWidget(self.asoundrc_btn)
+        
+        self.alsa_plugin_status = QLabel("Checking...")
+        self.alsa_plugin_status.setStyleSheet("color: #aaa; font-size: 11px;")
+        config_layout.addWidget(self.alsa_plugin_status)
 
         layout.addWidget(config_group)
 
@@ -494,6 +505,11 @@ SystemCallFilter=@clock
 
     def set_running_state(self, running: bool):
         """Disable/enable settings when inferno is running."""
+        # Only update if state actually changes (idempotent)
+        current_enabled = self.iface_combo.isEnabled()
+        if current_enabled == running:
+            return  # Already in correct state
+            
         enabled = not running
         self.iface_combo.setEnabled(enabled)
         self.refresh_iface_btn.setEnabled(enabled)

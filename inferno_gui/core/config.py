@@ -210,6 +210,13 @@ class StatimeConfig:
     
     def get_interface(self) -> Optional[str]:
         """Get the configured network interface."""
+        # Check [[port]] array first (PTPv2 format)
+        ports = self._data.get('port')
+        if isinstance(ports, list):
+            for port in ports:
+                if isinstance(port, dict) and 'interface' in port:
+                    return port['interface']
+        # Fallback: try common locations
         for key in ('global.interface', 'interface', 'port.interface'):
             val = self.get(key)
             if val:
@@ -246,9 +253,33 @@ def get_interface_ip(interface: str) -> Optional[str]:
     return None
 
 
+def get_actual_user_home() -> Path:
+    """Get the actual user's home directory, not root's when running with sudo.
+    
+    Uses SUDO_USER environment variable (set when running with sudo) to find
+    the real user's home directory, matching the install script behavior.
+    """
+    import os
+    import pwd
+    # Check SUDO_USER first (set when running with sudo)
+    sudo_user = os.environ.get('SUDO_USER')
+    if sudo_user and sudo_user != 'root':
+        try:
+            return Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            pass
+    # Fallback to current user
+    try:
+        return Path(pwd.getpwnam(os.getlogin()).pw_dir)
+    except Exception:
+        pass
+    # Ultimate fallback
+    return Path.home()
+
+
 def get_work_dir() -> Path:
     """Get the inferno working directory."""
-    return Path.home() / 'audio-inferno'
+    return get_actual_user_home() / 'audio-inferno'
 
 
 def get_statime_dir() -> Path:

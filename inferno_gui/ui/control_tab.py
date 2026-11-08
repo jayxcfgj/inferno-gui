@@ -7,11 +7,10 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox, QMenu
+    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle
 )
 from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QDesktopServices
-from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QFont, QColor
 
 from inferno_gui.core.config import (
     get_statime_binary,
@@ -51,6 +50,7 @@ class ControlTab(QWidget):
         self.settings_tab = settings_tab
         self.ptp_process: QProcess = None
         self.is_ptp_running = False
+        self._ptp_starting = False
         self._ptp_offset = None
         self._ptp_state = ""
         self._ptp_freq = None
@@ -64,6 +64,11 @@ class ControlTab(QWidget):
         self._update_timer = QTimer(self)
         self._update_timer.setInterval(500)
         self._update_timer.timeout.connect(self._update_status_panel)
+        
+        # Startup verification timer - verifies PTP process stays running
+        self._startup_verify_timer = QTimer(self)
+        self._startup_verify_timer.setSingleShot(True)
+        self._startup_verify_timer.timeout.connect(self._verify_ptp_startup)
         
         self.init_ui()
         self._load_saved_interface()
@@ -194,7 +199,8 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #1976D2; }
         """)
-        self.netaudio_btn.setEnabled(False)  # Enable when running
+        self.netaudio_btn.setEnabled(True)  # Always enabled
+        self.netaudio_btn.clicked.connect(self._open_netaudio)
         inf_status_row.addWidget(self.netaudio_btn)
         inferno_layout.addLayout(inf_status_row)
 
@@ -398,16 +404,29 @@ class ControlTab(QWidget):
         cmd = f"sudo {statime_bin} -c {config_file}"
         self.ptp_process.start("bash", ["-c", cmd])
         
-        self.is_ptp_running = True
+        # Set starting state - will be confirmed by _verify_ptp_startup after 2.5s
+        self._ptp_starting = True
         self.start_ptp_btn.setEnabled(False)
         self.stop_ptp_btn.setEnabled(True)
         self.interface_combo.setEnabled(False)
         self.ptp_v1_radio.setEnabled(False)
         self.ptp_v2_radio.setEnabled(False)
         self.refresh_iface_btn.setEnabled(False)
-        self._update_timer.start()
-        self.ptp_started.emit()
-        self._emit_status()
+        self._append_log("Waiting for PTP process to stabilize...")
+        self._startup_verify_timer.start(2500)  # 2.5 seconds to verify startup
+
+    def _verify_ptp_startup(self):
+        """Verify PTP process started successfully after a short delay."""
+        self._ptp_starting = False
+        if self.ptp_process and self.ptp_process.state() == QProcess.ProcessState.Running:
+            self.is_ptp_running = True
+            self._update_timer.start()
+            self.ptp_started.emit()
+            self._emit_status()
+            self._append_log("PTP process started successfully.")
+        else:
+            self._reset_ptp_state()
+            self._append_log("ERROR: PTP process failed to start or exited immediately")
 
     def _update_statime_config(self, config_path: Path, interface: str):
         """Update statime config with selected interface."""
@@ -437,6 +456,7 @@ class ControlTab(QWidget):
 
     def _reset_ptp_state(self):
         self.is_ptp_running = False
+        self._ptp_starting = False
         self.ptp_process = None
         self.start_ptp_btn.setEnabled(True)
         self.stop_ptp_btn.setEnabled(False)
@@ -445,6 +465,7 @@ class ControlTab(QWidget):
         self.ptp_v2_radio.setEnabled(True)
         self.refresh_iface_btn.setEnabled(True)
         self._update_timer.stop()
+        self._startup_verify_timer.stop()
         self._ptp_state = ""
         self._ptp_offset = None
         self._ptp_freq = None
@@ -455,11 +476,18 @@ class ControlTab(QWidget):
         self.ptp_freq_label.setText("Freq: —")
 
     def _ptp_finished(self, exit_code, exit_status):
+        was_running = self.is_ptp_running
         self._reset_ptp_state()
-        if exit_code == 0:
-            self._append_log("PTP process completed successfully.")
+        if was_running:
+            if exit_code == 0:
+                self._append_log("PTP process completed successfully.")
+            else:
+                self._append_log(f"PTP process exited with code: {exit_code}")
+            self.ptp_stopped.emit()
         else:
-            self._append_log(f"PTP process exited with code: {exit_code}")
+            # Process failed during startup - _verify_ptp_startup already logged error
+            if exit_code != 0:
+                self._append_log(f"PTP process exited during startup with code: {exit_code}")
 
     def _on_stdout(self):
         data = self.ptp_process.readAllStandardOutput()
@@ -639,8 +667,20 @@ class ControlTab(QWidget):
                 self._append_log(f"Error opening Cable: {e}")
 
     def _open_netaudio(self):
-        """Open netaudio web interface."""
-        QDesktopServices.openUrl(QUrl("http://localhost:8080"))
+        """Open netaudio web interface using netaudio CLI."""
+        import subprocess
+        import os
+        try:
+            # Get actual user (not root) to run netaudio command
+            sudo_user = os.environ.get('SUDO_USER', 'jacob')
+            # Use full path to netaudio (installed via pipx for the user)
+            netaudio_path = f"/home/{sudo_user}/.local/bin/netaudio"
+            # Run as the actual user so it can connect to their netaudio daemon
+            subprocess.Popen(['sudo', '-u', sudo_user, netaudio_path, 'daemon', 'web', '--open'])
+        except FileNotFoundError:
+            self._append_log("netaudio command not found - install netaudio first")
+        except Exception as e:
+            self._append_log(f"Error opening NetAudio Web UI: {e}")
 
     def get_ptp_status(self) -> dict:
         """Get current PTP status for session tab."""
