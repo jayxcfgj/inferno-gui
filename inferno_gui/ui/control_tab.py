@@ -7,7 +7,8 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle
+    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle,
+    QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
@@ -54,6 +55,7 @@ class ControlTab(QWidget):
         self._ptp_offset = None
         self._ptp_state = ""
         self._ptp_freq = None
+        self._interface_ips = {}
         
         self.parser = StatimeLogParser(filter_interval=1.0)
         self._stdout_buffer = ''
@@ -100,11 +102,13 @@ class ControlTab(QWidget):
         
         iface_row.addSpacing(16)
         iface_row.addWidget(QLabel("PTP Version:"))
-        self.ptp_v1_radio = QCheckBox("PTPv1 (IEEE 1588-2002)")
-        self.ptp_v2_radio = QCheckBox("PTPv2 (IEEE 1588-2008)")
+        self.ptp_v1_radio = QRadioButton("PTPv1 (IEEE 1588-2002)")
+        self.ptp_v2_radio = QRadioButton("PTPv2 (IEEE 1588-2008)")
         self.ptp_v2_radio.setChecked(True)
-        self.ptp_v1_radio.toggled.connect(lambda: self._on_ptp_version_changed('v1'))
-        self.ptp_v2_radio.toggled.connect(lambda: self._on_ptp_version_changed('v2'))
+        self.ptp_version_group = QButtonGroup(self)
+        self.ptp_version_group.addButton(self.ptp_v1_radio, 1)
+        self.ptp_version_group.addButton(self.ptp_v2_radio, 2)
+        self.ptp_version_group.idToggled.connect(self._on_ptp_version_toggled)
         iface_row.addWidget(self.ptp_v1_radio)
         iface_row.addWidget(self.ptp_v2_radio)
         iface_row.addStretch()
@@ -309,64 +313,77 @@ class ControlTab(QWidget):
             self.ptp_v2_radio.setChecked(True)
         
         if saved:
-            idx = self.interface_combo.findText(saved)
+            idx = self.interface_combo.findData(saved)
             if idx >= 0:
                 self.interface_combo.setCurrentIndex(idx)
     
     def _refresh_interfaces(self):
         """Refresh the interface list."""
-        current = self.interface_combo.currentText()
+        current = self.interface_combo.currentData()
         self.interface_combo.clear()
         
-        from inferno_gui.core.config import get_available_interfaces
+        from inferno_gui.core.config import get_available_interfaces, get_interface_ip
         interfaces = get_available_interfaces()
         
+        # Store IP info for each interface
+        self._interface_ips = {}
+        
         if interfaces:
-            self.interface_combo.addItems(interfaces)
+            for iface in interfaces:
+                ip = get_interface_ip(iface)
+                self._interface_ips[iface] = ip
+                display_text = f"{iface} ({ip})" if ip else f"{iface} (no IP)"
+                self.interface_combo.addItem(display_text, iface)
             # Restore selection
             if current:
-                idx = self.interface_combo.findText(current)
+                idx = self.interface_combo.findData(current)
                 if idx >= 0:
                     self.interface_combo.setCurrentIndex(idx)
         else:
             self.interface_combo.addItem("No interfaces found")
             self.interface_combo.setEnabled(False)
             self.start_ptp_btn.setEnabled(False)
-
+        
+        # Update start button state based on current selection
+        self._update_start_button_state()
+    
+    def _update_start_button_state(self):
+        """Enable start button only if selected interface has an IP."""
+        iface = self.interface_combo.currentData()
+        if iface and iface in self._interface_ips and self._interface_ips[iface]:
+            self.start_ptp_btn.setEnabled(True)
+        else:
+            self.start_ptp_btn.setEnabled(False)
+    
     def _on_interface_changed(self, index):
         """Handle interface selection change."""
-        iface = self.interface_combo.currentText()
+        iface = self.interface_combo.currentData()
         if iface and not iface.startswith("No interfaces"):
             QSettings("InfernoGUI", "control").setValue("selected_interface", iface)
-            self._update_ip_display(iface)
+            ip = self._interface_ips.get(iface)
+            if ip:
+                self.ip_label.setText(f"IP: {ip}")
+                self.ip_label.setStyleSheet("color: #4caf50; font-size: 11px;")
+            else:
+                self.ip_label.setText("IP: (no address assigned)")
+                self.ip_label.setStyleSheet("color: #ffc107; font-size: 11px;")
             # Also update settings tab if linked
             if self.settings_tab:
                 self.settings_tab.set_interface(iface)
+            # Update start button state
+            self._update_start_button_state()
     
-    def _on_ptp_version_changed(self, version: str):
+    def _on_ptp_version_toggled(self, button_id: int, checked: bool):
         """Handle PTP version radio button change."""
-        if version == 'v1':
-            self.ptp_v2_radio.setChecked(False)
-        else:
-            self.ptp_v1_radio.setChecked(False)
-        QSettings("InfernoGUI", "control").setValue("ptp_version", version)
-        if self.settings_tab:
-            self.settings_tab.set_ptp_version(version)
-
-    def _update_ip_display(self, iface: str):
-        """Update IP address label for selected interface."""
-        from inferno_gui.core.config import get_interface_ip
-        ip = get_interface_ip(iface)
-        if ip:
-            self.ip_label.setText(f"IP: {ip}")
-            self.ip_label.setStyleSheet("color: #4caf50; font-size: 11px;")
-        else:
-            self.ip_label.setText("IP: (no address assigned)")
-            self.ip_label.setStyleSheet("color: #ffc107; font-size: 11px;")
+        if checked:
+            version = 'v1' if button_id == 1 else 'v2'
+            QSettings("InfernoGUI", "control").setValue("ptp_version", version)
+            if self.settings_tab:
+                self.settings_tab.set_ptp_version(version)
 
     def start_ptp(self):
         """Start statime PTP daemon."""
-        iface = self.interface_combo.currentText()
+        iface = self.interface_combo.currentData()
         if not iface or iface.startswith("No interfaces"):
             self._append_log("ERROR: Please select a valid network interface")
             return
@@ -693,7 +710,7 @@ class ControlTab(QWidget):
 
     def set_interface(self, iface: str):
         """Set interface from settings tab."""
-        idx = self.interface_combo.findText(iface)
+        idx = self.interface_combo.findData(iface)
         if idx >= 0:
             self.interface_combo.setCurrentIndex(idx)
 
@@ -708,7 +725,7 @@ class ControlTab(QWidget):
         return self.is_ptp_running
 
     def get_interface(self) -> str:
-        return self.interface_combo.currentText()
+        return self.interface_combo.currentData() or ""
 
     def get_ptp_version(self) -> str:
         return 'v1' if self.ptp_v1_radio.isChecked() else 'v2'

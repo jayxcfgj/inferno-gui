@@ -6,7 +6,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QLineEdit,
-    QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle
+    QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle,
+    QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont, QDesktopServices
@@ -68,11 +69,13 @@ class SettingsTab(QWidget):
         net_layout.addRow("Current IP:", self.ip_display)
 
         # PTP Version
-        self.ptp_v1_radio = QCheckBox("PTPv1 (IEEE 1588-2002)")
-        self.ptp_v2_radio = QCheckBox("PTPv2 (IEEE 1588-2008)")
+        self.ptp_v1_radio = QRadioButton("PTPv1 (IEEE 1588-2002)")
+        self.ptp_v2_radio = QRadioButton("PTPv2 (IEEE 1588-2008)")
         self.ptp_v2_radio.setChecked(True)
-        self.ptp_v1_radio.toggled.connect(lambda: self._on_ptp_version_changed('v1'))
-        self.ptp_v2_radio.toggled.connect(lambda: self._on_ptp_version_changed('v2'))
+        self.ptp_version_group = QButtonGroup(self)
+        self.ptp_version_group.addButton(self.ptp_v1_radio, 1)
+        self.ptp_version_group.addButton(self.ptp_v2_radio, 2)
+        self.ptp_version_group.idToggled.connect(self._on_ptp_version_toggled)
         ptp_ver_layout = QHBoxLayout()
         ptp_ver_layout.addWidget(self.ptp_v1_radio)
         ptp_ver_layout.addWidget(self.ptp_v2_radio)
@@ -245,35 +248,41 @@ class SettingsTab(QWidget):
     
     def _refresh_interfaces(self):
         """Refresh interface list."""
-        current = self.iface_combo.currentText()
+        current = self.iface_combo.currentData()
         self.iface_combo.clear()
         interfaces = get_available_interfaces()
+        
+        # Store IP info for each interface
+        self._interface_ips = {}
+        
         if interfaces:
-            self.iface_combo.addItems(interfaces)
+            for iface in interfaces:
+                ip = get_interface_ip(iface)
+                self._interface_ips[iface] = ip
+                display_text = f"{iface} ({ip})" if ip else f"{iface} (no IP)"
+                self.iface_combo.addItem(display_text, iface)
             if current:
-                idx = self.iface_combo.findText(current)
+                idx = self.iface_combo.findData(current)
                 if idx >= 0:
                     self.iface_combo.setCurrentIndex(idx)
         self._update_ip_display()
-
+    
     def _on_iface_changed(self, index):
         """Handle interface change."""
         self._update_ip_display()
-        iface = self.iface_combo.currentText()
+        iface = self.iface_combo.currentData()
         if iface:
             self.interface_changed.emit(iface)
-
-    def _on_ptp_version_changed(self, version: str):
-        """Handle PTP version change."""
-        if version == 'v1':
-            self.ptp_v2_radio.setChecked(False)
-        else:
-            self.ptp_v1_radio.setChecked(False)
-        self.ptp_version_changed.emit(version)
+    
+    def _on_ptp_version_toggled(self, button_id: int, checked: bool):
+        """Handle PTP version radio button change."""
+        if checked:
+            version = 'v1' if button_id == 1 else 'v2'
+            self.ptp_version_changed.emit(version)
 
     def _update_ip_display(self):
         """Update IP address display for selected interface."""
-        iface = self.iface_combo.currentText()
+        iface = self.iface_combo.currentData()
         if iface:
             ip = get_interface_ip(iface)
             if ip:
@@ -390,7 +399,7 @@ SystemCallFilter=@clock
         saved_iface = settings.value("interface", "", type=str)
         self._refresh_interfaces()
         if saved_iface:
-            idx = self.iface_combo.findText(saved_iface)
+            idx = self.iface_combo.findData(saved_iface)
             if idx >= 0:
                 self.iface_combo.setCurrentIndex(idx)
         
@@ -420,7 +429,7 @@ SystemCallFilter=@clock
         self.inferno_config.save()
         
         # Save interface
-        iface = self.iface_combo.currentText()
+        iface = self.iface_combo.currentData()
         if iface:
             settings.setValue("interface", iface)
         
@@ -492,7 +501,7 @@ SystemCallFilter=@clock
 
     def set_interface(self, iface: str):
         """Set interface from control tab."""
-        idx = self.iface_combo.findText(iface)
+        idx = self.iface_combo.findData(iface)
         if idx >= 0:
             self.iface_combo.setCurrentIndex(idx)
 
