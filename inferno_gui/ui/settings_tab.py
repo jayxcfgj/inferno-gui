@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont, QDesktopServices
-from PyQt6.QtCore import QUrl
+from PyQt6.QtCore import QUrl, QTimer
 
 from inferno_gui.core.config import (
     InfernoConfig,
@@ -147,37 +147,52 @@ class SettingsTab(QWidget):
 
         layout.addWidget(adv_group)
 
-        # ── System Integration ──────────────────────────────────
-        sys_group = QGroupBox("System Integration")
-        sys_layout = QVBoxLayout(sys_group)
-        sys_layout.setSpacing(8)
+        # ── Config Files ────────────────────────────────────────
+        config_group = QGroupBox("Config Files")
+        config_layout = QVBoxLayout(config_group)
+        config_layout.setSpacing(8)
 
-        # PipeWire override status
-        self.pw_override_status = QLabel("Checking...")
-        self.pw_override_status.setStyleSheet("color: #aaa; font-size: 11px;")
-        sys_layout.addWidget(QLabel("PipeWire @clock override:"))
-        sys_layout.addWidget(self.pw_override_status)
+        # PipeWire override
+        pw_override_path = Path.home() / ".config/systemd/user/pipewire.service.d/override.conf"
+        self.pw_override_btn = QPushButton("📝 Open PipeWire Override")
+        self.pw_override_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(pw_override_path)))
+        )
+        config_layout.addWidget(self.pw_override_btn)
+        
+        # ALSA config
+        alsa_rc_path = Path.home() / ".asoundrc"
+        self.alsa_rc_btn = QPushButton("📝 Open ~/.asoundrc")
+        self.alsa_rc_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
+        )
+        config_layout.addWidget(self.alsa_rc_btn)
+        
+        # PTPv1 config
+        from inferno_gui.core.config import get_default_statime_config
+        ptpv1_path = get_default_statime_config('v1')
+        self.ptpv1_btn = QPushButton("📝 Open PTPv1 Config")
+        self.ptpv1_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv1_path)))
+        )
+        config_layout.addWidget(self.ptpv1_btn)
+        
+        # PTPv2 config
+        ptpv2_path = get_default_statime_config('v2')
+        self.ptpv2_btn = QPushButton("📝 Open PTPv2 Config")
+        self.ptpv2_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv2_path)))
+        )
+        config_layout.addWidget(self.ptpv2_btn)
+        
+        # ALSA config
+        self.asoundrc_btn = QPushButton("📝 Open ~/.asoundrc (Alternative)")
+        self.asoundrc_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
+        )
+        config_layout.addWidget(self.asoundrc_btn)
 
-        self.fix_pw_btn = QPushButton("Fix PipeWire Permissions")
-        self.fix_pw_btn.clicked.connect(self._fix_pipewire_permissions)
-        self.fix_pw_btn.setStyleSheet("""
-            QPushButton { background-color: #FF9800; color: white; border: none;
-                          padding: 8px 16px; border-radius: 4px; }
-            QPushButton:hover { background-color: #F57C00; }
-        """)
-        sys_layout.addWidget(self.fix_pw_btn)
-
-        # ALSA plugin status
-        self.alsa_plugin_status = QLabel("Checking...")
-        self.alsa_plugin_status.setStyleSheet("color: #aaa; font-size: 11px;")
-        sys_layout.addWidget(QLabel("ALSA Plugin Status:"))
-        sys_layout.addWidget(self.alsa_plugin_status)
-
-        self.test_alsa_btn = QPushButton("Test ALSA Device")
-        self.test_alsa_btn.clicked.connect(self._test_alsa_device)
-        sys_layout.addWidget(self.test_alsa_btn)
-
-        layout.addWidget(sys_group)
+        layout.addWidget(config_group)
 
         # ── Actions ──────────────────────────────────────────────
         actions_group = QGroupBox("Actions")
@@ -201,12 +216,6 @@ class SettingsTab(QWidget):
         """)
         self.reset_btn.clicked.connect(self.reset_to_defaults)
         actions_layout.addWidget(self.reset_btn)
-
-        self.open_asoundrc_btn = QPushButton("📝 Open ~/.asoundrc")
-        self.open_asoundrc_btn.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl.fromLocalFile(os.path.expanduser("~/.asoundrc"))
-        ))
-        actions_layout.addWidget(self.open_asoundrc_btn)
 
         actions_layout.addStretch()
         layout.addWidget(actions_group)
@@ -441,7 +450,6 @@ SystemCallFilter=@clock
                     if cfg.load():
                         cfg.set('global.domain', self.ptp_domain.value())
                         cfg.set('global.log_level', self.log_level.currentText().lower())
-                        # Sync interval might be in different places
                         cfg.set('port.sync_interval', self.sync_interval.value())
                         cfg.set('port.announce_interval', self.announce_interval.value())
                         cfg.save()

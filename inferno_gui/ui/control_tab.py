@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox
+    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox, QMenu
 )
 from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QDesktopServices
@@ -113,7 +113,7 @@ class ControlTab(QWidget):
         # Start/Stop buttons row
         btn_row = QHBoxLayout()
         
-        self.start_ptp_btn = QPushButton("▶ START PTP")
+        self.start_ptp_btn = QPushButton("▶ Start")
         self.start_ptp_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50; color: white;
@@ -126,7 +126,7 @@ class ControlTab(QWidget):
         self.start_ptp_btn.clicked.connect(self.start_ptp)
         btn_row.addWidget(self.start_ptp_btn)
 
-        self.stop_ptp_btn = QPushButton("■ STOP PTP")
+        self.stop_ptp_btn = QPushButton("■ Stop")
         self.stop_ptp_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f44336; color: white;
@@ -197,6 +197,35 @@ class ControlTab(QWidget):
         self.netaudio_btn.setEnabled(False)  # Enable when running
         inf_status_row.addWidget(self.netaudio_btn)
         inferno_layout.addLayout(inf_status_row)
+
+        # Additional tools row
+        tools_row = QHBoxLayout()
+        self.qpwgraph_btn = QPushButton("📊 Open qpwgraph")
+        self.qpwgraph_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0; color: white;
+                border: none; padding: 8px 16px;
+                font-size: 12px; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #7B1FA2; }
+        """)
+        self.qpwgraph_btn.clicked.connect(self._open_qpwgraph)
+        tools_row.addWidget(self.qpwgraph_btn)
+        
+        self.cable_btn = QPushButton("🔗 Open Cable")
+        self.cable_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800; color: white;
+                border: none; padding: 8px 16px;
+                font-size: 12px; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #F57C00; }
+        """)
+        self.cable_btn.clicked.connect(self._open_cable)
+        tools_row.addWidget(self.cable_btn)
+        
+        tools_row.addStretch()
+        inferno_layout.addLayout(tools_row)
 
         # Note about inferno auto-start
         note = QLabel(
@@ -342,7 +371,7 @@ class ControlTab(QWidget):
         sudo_check.waitForFinished(3000)
         if sudo_check.exitCode() != 0:
             self._append_log("ERROR: No cached sudo credentials.")
-            self._append_log("Run 'sudo -v' in a terminal first, then click START PTP.")
+            self._append_log("Run 'sudo -v' in a terminal first, then click START.")
             return
 
         # Determine config file
@@ -364,6 +393,10 @@ class ControlTab(QWidget):
         self._append_log(f"Config: {config_file}")
         self._append_log(f"Binary: {statime_bin}")
 
+        # Use ACTUAL_HOME to get the correct path
+        from inferno_gui.core.config import get_work_dir
+        work_dir = get_work_dir()
+        
         cmd = f"sudo {statime_bin} -c {config_file}"
         self.ptp_process.start("bash", ["-c", cmd])
         
@@ -586,6 +619,30 @@ class ControlTab(QWidget):
                 self._append_log("Check ~/.asoundrc and ALSA plugin installation")
         except Exception as e:
             self._append_log(f"Error testing ALSA: {e}")
+
+    def _open_netaudio(self):
+        """Open netaudio web interface."""
+        QDesktopServices.openUrl(QUrl("http://localhost:8080"))
+
+    def _open_qpwgraph(self):
+        """Open qpwgraph."""
+        try:
+            subprocess.Popen(['qpwgraph'])
+        except FileNotFoundError:
+            try:
+                subprocess.Popen(['flatpak', 'run', 'org.freedesktop.qpwgraph'])
+            except Exception as e:
+                self._append_log(f"Error opening qpwgraph: {e}")
+
+    def _open_cable(self):
+        """Open Cable."""
+        try:
+            subprocess.Popen(['cable'])
+        except FileNotFoundError:
+            try:
+                subprocess.Popen(['flatpak', 'run', 'com.github.cable'])
+            except Exception as e:
+                self._append_log(f"Error opening Cable: {e}")
 
     def _open_netaudio(self):
         """Open netaudio web interface."""
