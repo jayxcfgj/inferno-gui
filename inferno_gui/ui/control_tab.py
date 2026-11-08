@@ -419,6 +419,14 @@ class ControlTab(QWidget):
         self._append_log(f"Binary: {statime_bin}")
 
         cmd = f"sudo {statime_bin} -c {config_file}"
+        
+        # Create new QProcess if needed (after previous stop)
+        if self.ptp_process is None:
+            self.ptp_process = QProcess()
+            self.ptp_process.readyReadStandardOutput.connect(self._on_stdout)
+            self.ptp_process.readyReadStandardError.connect(self._on_stderr)
+            self.ptp_process.finished.connect(self._ptp_finished)
+        
         self.ptp_process.start("bash", ["-c", cmd])
         
         # Set starting state - will be confirmed by _verify_ptp_startup after 2.5s
@@ -570,8 +578,18 @@ class ControlTab(QWidget):
         self._ptp_offset = status['offset_ns']
         self._ptp_freq = status['freq_ppb']
         
-        # Update labels - show "Locked" instead of "SLAVE"
-        display_state = "Locked" if status['state'] == 'SLAVE' else status['state']
+        # Update labels - show sync quality based on offset
+        state = status['state']
+        offset = status['offset_ns']
+        if state == 'SLAVE' and offset is not None:
+            if offset <= 200:
+                display_state = "Locked"
+            elif offset <= 1000:
+                display_state = "Syncing..."
+            else:
+                display_state = "SLAVE"
+        else:
+            display_state = state
         self.ptp_state_label.setText(f"State: {display_state}")
         
         if status['offset_ns'] is not None:
@@ -612,15 +630,17 @@ class ControlTab(QWidget):
             label = "Uncalibrated"
             tip = "Uncalibrated – acquiring sync"
         elif state == 'SLAVE' and offset is not None:
-            label = f"Locked ({offset} ns)"
             if offset <= 200:
                 color = "#4caf50"
+                label = f"Locked ({offset} ns)"
                 tip = f"Sync: {offset}ns (excellent)"
             elif offset <= 1000:
                 color = "#ffc107"
+                label = f"Syncing... ({offset} ns)"
                 tip = f"Sync: {offset}ns (good)"
             else:
                 color = "#f44336"
+                label = f"SLAVE ({offset} ns)"
                 tip = f"Sync: {offset}ns (poor)"
         else:
             color = "gray"
