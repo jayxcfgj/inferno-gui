@@ -207,8 +207,11 @@ class StatimeLogParser:
         
         self._last_entry = entry
         
+        # Always update pending metrics for ANY line that has metrics (even if filtered from display)
+        self.update_pending_metrics(entry)
+        
         # Always return entry for important events (errors, warnings, explicit state changes)
-        # But NOT for TRACE lines with estimated offset/freq - those should only update metrics
+        # But NOT for TRACE lines with estimated offset/freq - those only update metrics
         has_explicit_state = entry.state is not None
         has_error_warning = entry.severity != LogSeverity.INFO
         

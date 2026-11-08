@@ -536,7 +536,7 @@ class ControlTab(QWidget):
                 continue
             entry = self.parser.parse_line(line)
             if entry:
-                self.parser.update_pending_metrics(entry)
+                # update_pending_metrics is now called internally by parse_line
                 formatted = format_log_entry(entry)
                 self._append_colored(formatted, entry.severity)
 
