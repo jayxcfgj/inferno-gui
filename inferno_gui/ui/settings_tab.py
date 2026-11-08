@@ -160,8 +160,13 @@ class SettingsTab(QWidget):
         )
         config_layout.addWidget(self.pw_override_btn)
         
-
-                config_layout.addWidget(self.ptpv1_btn)
+        # PTPv1 config
+        ptpv1_path = get_default_statime_config('v1')
+        self.ptpv1_btn = QPushButton("📝 Open PTPv1 Config")
+        self.ptpv1_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv1_path)))
+        )
+        config_layout.addWidget(self.ptpv1_btn)
         
         # PTPv2 config
         ptpv2_path = get_default_statime_config('v2')
