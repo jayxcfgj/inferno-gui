@@ -139,7 +139,7 @@ class StatimeLogParser:
     
     def __init__(self, filter_interval: float = 1.0):
         self.filter_interval = filter_interval  # seconds between summary lines
-        self._last_summary_time = 0.0
+        self._last_summary_time = time.monotonic()
         self._pending_metrics: Dict[str, any] = {}
         self._last_state: Optional[str] = None
         self._counters = {
@@ -207,12 +207,12 @@ class StatimeLogParser:
         
         self._last_entry = entry
         
-        # Always return entry for important events (errors, warnings, state changes)
-        is_important = (
-            entry.severity != LogSeverity.INFO or
-            entry.state is not None or
-            entry.offset_ns is not None
-        )
+        # Always return entry for important events (errors, warnings, explicit state changes)
+        # But NOT for TRACE lines with estimated offset/freq - those should only update metrics
+        has_explicit_state = entry.state is not None
+        has_error_warning = entry.severity != LogSeverity.INFO
+        
+        is_important = has_explicit_state or has_error_warning
         
         if is_important:
             return entry
