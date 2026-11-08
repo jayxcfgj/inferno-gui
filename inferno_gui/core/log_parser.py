@@ -35,7 +35,12 @@ STATIME_PATTERNS = [
     # Offset/frequency patterns (common in PTP logs)
     {
         'key': 'offset',
-        'pattern': re.compile(r'offset\s+(-?\d+)'),
+        'pattern': re.compile(r'offset\s*[=:]\s*(-?\d+\.?\d*)\s*ns?'),
+        'severity': LogSeverity.INFO,
+    },
+    {
+        'key': 'offset',
+        'pattern': re.compile(r'Estimated\s+offset\s+(-?\d+\.?\d*)\s*ns'),
         'severity': LogSeverity.INFO,
     },
     {
@@ -45,12 +50,22 @@ STATIME_PATTERNS = [
     },
     {
         'key': 'freq_ppb',
-        'pattern': re.compile(r'freq\s+(-?\d+)'),
+        'pattern': re.compile(r'freq\s*[=:]\s*(-?\d+\.?\d*)\s*ppb?'),
+        'severity': LogSeverity.INFO,
+    },
+    {
+        'key': 'freq_ppb',
+        'pattern': re.compile(r'freq\s+(-?\d+\.?\d*)'),
         'severity': LogSeverity.INFO,
     },
     {
         'key': 'path_delay',
         'pattern': re.compile(r'path_delay\s+(\d+)'),
+        'severity': LogSeverity.INFO,
+    },
+    {
+        'key': 'delay',
+        'pattern': re.compile(r'delay\s+(\d+\.?\d*)'),
         'severity': LogSeverity.INFO,
     },
     # State transitions
@@ -160,17 +175,17 @@ class StatimeLogParser:
                 # Update metrics
                 if pat_info['key'] in ('offset', 'rms_offset'):
                     try:
-                        entry.offset_ns = abs(int(match.group(1)))
+                        entry.offset_ns = abs(int(float(match.group(1))))
                     except (ValueError, IndexError):
                         pass
                 elif pat_info['key'] == 'freq_ppb':
                     try:
-                        entry.freq_ppb = int(match.group(1))
+                        entry.freq_ppb = int(float(match.group(1)))
                     except (ValueError, IndexError):
                         pass
-                elif pat_info['key'] == 'path_delay':
+                elif pat_info['key'] in ('path_delay', 'delay'):
                     try:
-                        entry.path_delay_ns = int(match.group(1))
+                        entry.path_delay_ns = int(float(match.group(1)))
                     except (ValueError, IndexError):
                         pass
                 elif 'state' in pat_info:
@@ -273,6 +288,12 @@ class StatimeLogParser:
         if entry.state is not None:
             self._last_state = entry.state
             self._pending_metrics['state'] = entry.state
+        # Infer state from metrics if no explicit state transition
+        elif entry.offset_ns is not None or entry.freq_ppb is not None:
+            # If we're getting offset/freq data, we're likely in SLAVE state (synchronized)
+            if self._last_state != 'SLAVE':
+                self._last_state = 'SLAVE'
+                self._pending_metrics['state'] = 'SLAVE'
     
     def get_sync_status(self) -> Dict[str, any]:
         """Get current sync status for UI indicators."""
