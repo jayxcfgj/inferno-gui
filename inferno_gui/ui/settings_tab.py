@@ -160,22 +160,8 @@ class SettingsTab(QWidget):
         )
         config_layout.addWidget(self.pw_override_btn)
         
-        # ALSA config
-        alsa_rc_path = Path.home() / ".asoundrc"
-        self.alsa_rc_btn = QPushButton("📝 Open ~/.asoundrc")
-        self.alsa_rc_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
-        )
-        config_layout.addWidget(self.alsa_rc_btn)
-        
-        # PTPv1 config
-        from inferno_gui.core.config import get_default_statime_config
-        ptpv1_path = get_default_statime_config('v1')
-        self.ptpv1_btn = QPushButton("📝 Open PTPv1 Config")
-        self.ptpv1_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv1_path)))
-        )
-        config_layout.addWidget(self.ptpv1_btn)
+
+                config_layout.addWidget(self.ptpv1_btn)
         
         # PTPv2 config
         ptpv2_path = get_default_statime_config('v2')
@@ -186,7 +172,7 @@ class SettingsTab(QWidget):
         config_layout.addWidget(self.ptpv2_btn)
         
         # ALSA config
-        self.asoundrc_btn = QPushButton("📝 Open ~/.asoundrc (Alternative)")
+        self.asoundrc_btn = QPushButton("📝 Open ~/.asoundrc")
         self.asoundrc_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
         )

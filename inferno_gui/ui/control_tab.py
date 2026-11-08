@@ -376,8 +376,10 @@ class ControlTab(QWidget):
 
         # Determine config file
         ptp_version = 'v1' if self.ptp_v1_radio.isChecked() else 'v2'
-        config_file = get_default_statime_config(ptp_version)
+        # Use ACTUAL_HOME for correct paths
+        from inferno_gui.core.config import get_work_dir, get_default_statime_config, get_statime_binary
         statime_bin = get_statime_binary()
+        config_file = get_default_statime_config(ptp_version)
 
         if not statime_bin.exists():
             self._append_log(f"ERROR: statime binary not found at {statime_bin}")
@@ -393,10 +395,6 @@ class ControlTab(QWidget):
         self._append_log(f"Config: {config_file}")
         self._append_log(f"Binary: {statime_bin}")
 
-        # Use ACTUAL_HOME to get the correct path
-        from inferno_gui.core.config import get_work_dir
-        work_dir = get_work_dir()
-        
         cmd = f"sudo {statime_bin} -c {config_file}"
         self.ptp_process.start("bash", ["-c", cmd])
         
@@ -619,10 +617,6 @@ class ControlTab(QWidget):
                 self._append_log("Check ~/.asoundrc and ALSA plugin installation")
         except Exception as e:
             self._append_log(f"Error testing ALSA: {e}")
-
-    def _open_netaudio(self):
-        """Open netaudio web interface."""
-        QDesktopServices.openUrl(QUrl("http://localhost:8080"))
 
     def _open_qpwgraph(self):
         """Open qpwgraph."""
