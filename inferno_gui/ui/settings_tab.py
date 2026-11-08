@@ -186,6 +186,7 @@ class SettingsTab(QWidget):
         self.asoundrc_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
         )
+        config_layout.addWidget(self.asoundrc_btn)
 
         layout.addWidget(config_group)
 
