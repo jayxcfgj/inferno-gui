@@ -177,12 +177,21 @@ class SettingsTab(QWidget):
         config_layout.addWidget(self.ptpv2_btn)
         
         # ALSA config
-        alsa_rc_path = Path.home() / ".asoundrc"
+        # Use SUDO_USER to get actual user's home directory when running as root
+        import os
+        sudo_user = os.environ.get('SUDO_USER')
+        if sudo_user:
+            import pwd
+            try:
+                alsa_rc_path = Path(pwd.getpwnam(sudo_user).pw_dir) / ".asoundrc"
+            except KeyError:
+                alsa_rc_path = Path.home() / ".asoundrc"
+        else:
+            alsa_rc_path = Path.home() / ".asoundrc"
         self.asoundrc_btn = QPushButton("📝 Open ~/.asoundrc")
         self.asoundrc_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
         )
-        config_layout.addWidget(self.asoundrc_btn)
 
         layout.addWidget(config_group)
 
