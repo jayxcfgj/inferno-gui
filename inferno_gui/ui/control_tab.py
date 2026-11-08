@@ -429,6 +429,9 @@ class ControlTab(QWidget):
         
         self.ptp_process.start("bash", ["-c", cmd])
         
+        # Create PipeWire nodes for Inferno
+        self._create_pipewire_nodes()
+        
         # Set starting state - will be confirmed by _verify_ptp_startup after 2.5s
         self._ptp_starting = True
         self.start_ptp_btn.setEnabled(False)
@@ -476,8 +479,78 @@ class ControlTab(QWidget):
                 self.ptp_process.waitForFinished()
             self._reset_ptp_state()
             self._append_log("PTP stopped.")
+        
+        # Destroy PipeWire nodes for Inferno
+        self._destroy_pipewire_nodes()
+        
         self.ptp_stopped.emit()
         self._emit_status()
+
+    def _create_pipewire_nodes(self):
+        """Create PipeWire nodes for Inferno sink and source."""
+        self._append_log("Creating PipeWire nodes for Inferno...")
+        
+        sink_cmd = (
+            "pw-cli create-node adapter "
+            "'{ object.linger=1 factory.name=api.alsa.pcm.sink "
+            "node.name=Inferno_sink media.class=Audio/Sink "
+            "api.alsa.path=inferno session.suspend-timeout-seconds=0 "
+            "node.pause-on-idle=false node.suspend-on-idle=false "
+            "node.always-process=true api.alsa.headroom=128 "
+            "api.alsa.pcm.card=999 }'"
+        )
+        
+        source_cmd = (
+            "pw-cli create-node adapter "
+            "'{ object.linger=1 factory.name=api.alsa.pcm.source "
+            "node.name=Inferno_source media.class=Audio/Source "
+            "api.alsa.path=inferno session.suspend-timeout-seconds=0 "
+            "node.pause-on-idle=false node.suspend-on-idle=false "
+            "node.always-process=true api.alsa.headroom=128 "
+            "api.alsa.pcm.card=999 }'"
+        )
+        
+        for name, cmd in [("Inferno sink", sink_cmd), ("Inferno source", source_cmd)]:
+            proc = QProcess()
+            proc.start("bash", ["-c", cmd])
+            if not proc.waitForFinished(5000):
+                self._append_log(f"Warning: {name} creation timed out")
+            else:
+                output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace').strip()
+                if output:
+                    self._append_log(f"{name} created: {output}")
+                else:
+                    self._append_log(f"{name} created successfully")
+
+    def _destroy_pipewire_nodes(self):
+        """Destroy PipeWire nodes for Inferno sink and source."""
+        self._append_log("Destroying PipeWire nodes for Inferno...")
+        
+        # List all nodes and find Inferno ones
+        proc = QProcess()
+        proc.start("pw-cli", ["ls", "Node"])
+        if not proc.waitForFinished(5000):
+            self._append_log("Warning: Failed to list PipeWire nodes")
+            return
+        
+        output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace')
+        
+        # Parse node IDs for Inferno_sink and Inferno_source
+        import re
+        node_pattern = re.compile(r'id\s+(\d+),.*node\.name\s*=\s*"(Inferno_sink|Inferno_source)"')
+        matches = node_pattern.findall(output)
+        
+        if not matches:
+            self._append_log("No Inferno PipeWire nodes found to destroy")
+            return
+        
+        for node_id, node_name in matches:
+            destroy_proc = QProcess()
+            destroy_proc.start("pw-cli", ["destroy", node_id])
+            if destroy_proc.waitForFinished(3000):
+                self._append_log(f"Destroyed {node_name} (ID: {node_id})")
+            else:
+                self._append_log(f"Warning: Failed to destroy {node_name} (ID: {node_id})")
 
     def _reset_ptp_state(self):
         self.is_ptp_running = False
