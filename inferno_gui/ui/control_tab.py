@@ -56,6 +56,7 @@ class ControlTab(QWidget):
         self._ptp_state = ""
         self._ptp_freq = None
         self._interface_ips = {}
+        self._settings_dirty = False
         
         self.parser = StatimeLogParser(filter_interval=1.0)
         self._stdout_buffer = ''
@@ -71,6 +72,10 @@ class ControlTab(QWidget):
         self._startup_verify_timer = QTimer(self)
         self._startup_verify_timer.setSingleShot(True)
         self._startup_verify_timer.timeout.connect(self._verify_ptp_startup)
+        
+        # Connect to settings dirty signal
+        if self.settings_tab:
+            self.settings_tab.dirty_changed.connect(self._on_settings_dirty_changed)
         
         self.init_ui()
         self._load_saved_interface()

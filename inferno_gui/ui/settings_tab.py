@@ -31,13 +31,18 @@ class SettingsTab(QWidget):
     settings_changed = pyqtSignal()
     interface_changed = pyqtSignal(str)
     ptp_version_changed = pyqtSignal(str)
+    dirty_changed = pyqtSignal(bool)  # True when unsaved changes exist
     
     def __init__(self, control_tab=None):
         super().__init__()
         self.control_tab = control_tab
         self.inferno_config = InfernoConfig()
+        self._dirty = False
+        self._original_values = {}
         self._init_ui()
         self.load_settings()
+        self._capture_original_values()
+        self._setup_dirty_tracking()
     
     def _init_ui(self):
         scroll = QScrollArea()
@@ -417,6 +422,81 @@ SystemCallFilter=@clock
         self.announce_interval.setValue(settings.value("announce_interval", 1, type=int))
         self.log_level.setCurrentText(settings.value("log_level", "INFO", type=str))
 
+    def _capture_original_values(self):
+        """Capture current values as baseline for dirty tracking."""
+        self._original_values = {
+            'device_name': self.device_name.text(),
+            'sample_rate': self.sample_rate.currentData(),
+            'tx_channels': self.tx_channels.value(),
+            'rx_channels': self.rx_channels.value(),
+            'bind_ip': self.bind_ip.text(),
+            'ptp_domain': self.ptp_domain.value(),
+            'sync_interval': self.sync_interval.value(),
+            'announce_interval': self.announce_interval.value(),
+            'log_level': self.log_level.currentText(),
+            'interface': self.iface_combo.currentData(),
+            'ptp_version': 'v1' if self.ptp_v1_radio.isChecked() else 'v2',
+        }
+        self._dirty = False
+        self.dirty_changed.emit(False)
+    
+    def _mark_dirty(self):
+        """Mark settings as having unsaved changes."""
+        if not self._dirty:
+            self._dirty = True
+            self.dirty_changed.emit(True)
+            # Visual feedback - add asterisk to save button
+            self.save_btn.setText("💾 Save Configuration*")
+            self.save_btn.setStyleSheet("""
+                QPushButton { background-color: #FF9800; color: white; border: none;
+                              padding: 10px 20px; font-size: 13px; font-weight: bold;
+                              border-radius: 4px; }
+                QPushButton:hover { background-color: #F57C00; }
+            """)
+    
+    def _check_dirty(self) -> bool:
+        """Check if current values differ from original."""
+        current = {
+            'device_name': self.device_name.text(),
+            'sample_rate': self.sample_rate.currentData(),
+            'tx_channels': self.tx_channels.value(),
+            'rx_channels': self.rx_channels.value(),
+            'bind_ip': self.bind_ip.text(),
+            'ptp_domain': self.ptp_domain.value(),
+            'sync_interval': self.sync_interval.value(),
+            'announce_interval': self.announce_interval.value(),
+            'log_level': self.log_level.currentText(),
+            'interface': self.iface_combo.currentData(),
+            'ptp_version': 'v1' if self.ptp_v1_radio.isChecked() else 'v2',
+        }
+        return current != self._original_values
+    
+    def _setup_dirty_tracking(self):
+        """Connect all input widgets to dirty tracking."""
+        widgets = [
+            self.device_name,
+            self.sample_rate,
+            self.tx_channels,
+            self.rx_channels,
+            self.bind_ip,
+            self.ptp_domain,
+            self.sync_interval,
+            self.announce_interval,
+            self.log_level,
+            self.iface_combo,
+            self.ptp_v1_radio,
+            self.ptp_v2_radio,
+        ]
+        for w in widgets:
+            if hasattr(w, 'textChanged'):
+                w.textChanged.connect(self._mark_dirty)
+            elif hasattr(w, 'currentIndexChanged'):
+                w.currentIndexChanged.connect(self._mark_dirty)
+            elif hasattr(w, 'valueChanged'):
+                w.valueChanged.connect(self._mark_dirty)
+            elif hasattr(w, 'toggled'):
+                w.toggled.connect(self._mark_dirty)
+    
     def save_settings(self):
         """Save all settings to config files."""
         settings = QSettings("InfernoGUI", "control")  # Use same group as control tab
@@ -454,13 +534,27 @@ SystemCallFilter=@clock
         
         self.settings_changed.emit()
         
+        # Reset dirty state
+        self._capture_original_values()
+        
         QMessageBox.information(
             self, "Settings Saved",
             "Configuration saved successfully.\n\n"
             "Note: Changes to audio parameters (sample rate, channels) "
             "require restarting any applications using the Inferno device."
         )
-
+    
+    def has_unsaved_changes(self) -> bool:
+        """Check if there are unsaved changes."""
+        return self._dirty or self._check_dirty()
+    
+    def auto_save_if_dirty(self) -> bool:
+        """Save settings if there are unsaved changes. Returns True if saved or no changes."""
+        if self.has_unsaved_changes():
+            self.save_settings()
+            return True
+        return True
+    
     def _update_statime_configs(self):
         """Update both statime config files with advanced settings."""
         from inferno_gui.core.config import get_default_statime_config, StatimeConfig
@@ -558,6 +652,17 @@ SystemCallFilter=@clock
             """)
         else:
             self.setStyleSheet("")
+
+    def has_unsaved_changes(self) -> bool:
+        """Check if there are unsaved changes."""
+        return self._dirty or self._check_dirty()
+    
+    def auto_save_if_dirty(self) -> bool:
+        """Save settings if there are unsaved changes. Returns True if saved or no changes."""
+        if self.has_unsaved_changes():
+            self.save_settings()
+            return True
+        return True
 
 
 # Need QTimer import
