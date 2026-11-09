@@ -29,7 +29,7 @@ class InfernoConfig:
     }
     
     def __init__(self, config_path: Optional[str] = None):
-        self.config_path = config_path or os.path.expanduser("~/.asoundrc")
+        self.config_path = config_path or get_actual_user_home() / ".asoundrc"
         self._data = self.DEFAULT_CONFIG.copy()
         self._loaded = False
     
@@ -79,7 +79,7 @@ class InfernoConfig:
     def save(self, backup: bool = True):
         """Save configuration to .asoundrc."""
         if backup and os.path.exists(self.config_path):
-            backup_path = self.config_path + '.bak'
+            backup_path = self.config_path.with_suffix(self.config_path.suffix + '.bak')
             os.rename(self.config_path, backup_path)
         
         content = self._generate_asoundrc()
