@@ -471,10 +471,23 @@ SystemCallFilter=@clock
                 try:
                     cfg = StatimeConfig(str(config_path))
                     if cfg.load():
-                        cfg.set('global.domain', self.ptp_domain.value())
-                        cfg.set('global.log_level', self.log_level.currentText().lower())
-                        cfg.set('port.sync_interval', self.sync_interval.value())
-                        cfg.set('port.announce_interval', self.announce_interval.value())
+                        # Handle both config formats (flat vs [global] section)
+                        # Try flat format first (installed format)
+                        if cfg.get('domain') is not None:
+                            cfg.set('domain', self.ptp_domain.value())
+                        else:
+                            cfg.set('global.domain', self.ptp_domain.value())
+                        
+                        if cfg.get('loglevel') is not None:
+                            cfg.set('loglevel', self.log_level.currentText().lower())
+                        elif cfg.get('global.log_level') is not None:
+                            cfg.set('global.log_level', self.log_level.currentText().lower())
+                        else:
+                            cfg.set('log_level', self.log_level.currentText().lower())
+                        
+                        # Port settings (array format)
+                        cfg.set('port[0].sync_interval', self.sync_interval.value())
+                        cfg.set('port[0].announce_interval', self.announce_interval.value())
                         cfg.save()
                 except Exception:
                     pass  # Ignore config update errors

@@ -182,13 +182,24 @@ class StatimeConfig:
         return data
     
     def set(self, key: str, value: Any):
-        """Set value using dot notation."""
+        """Set value using dot notation. Supports array indices like 'port[0].sync_interval'."""
         parts = key.split('.')
         data = self._data
-        for part in parts[:-1]:
-            if part not in data:
-                data[part] = {}
-            data = data[part]
+        for i, part in enumerate(parts[:-1]):
+            # Handle array index notation like 'port[0]'
+            if '[' in part and ']' in part:
+                base = part[:part.index('[')]
+                idx = int(part[part.index('[')+1:part.index(']')])
+                if base not in data:
+                    data[base] = []
+                # Ensure list is long enough
+                while len(data[base]) <= idx:
+                    data[base].append({})
+                data = data[base][idx]
+            else:
+                if part not in data:
+                    data[part] = {}
+                data = data[part]
         data[parts[-1]] = value
     
     def set_interface(self, interface: str):
