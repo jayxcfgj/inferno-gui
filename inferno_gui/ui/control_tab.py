@@ -116,10 +116,15 @@ class ControlTab(QWidget):
         self.ptp_version_group.addButton(self.ptp_v1_radio, 1)
         self.ptp_version_group.addButton(self.ptp_v2_radio, 2)
         self.ptp_version_group.idToggled.connect(self._on_ptp_version_toggled)
-        iface_row.addWidget(self.ptp_v1_radio)
-        iface_row.addWidget(self.ptp_v2_radio)
         iface_row.addStretch()
         ptp_layout.addLayout(iface_row)
+
+        # PTP version radios (own row: below interface, above start/stop)
+        radio_row = QHBoxLayout()
+        radio_row.addWidget(self.ptp_v1_radio)
+        radio_row.addWidget(self.ptp_v2_radio)
+        radio_row.addStretch()
+        ptp_layout.addLayout(radio_row)
 
         # IP address display
         self.ip_label = QLabel("IP: —")

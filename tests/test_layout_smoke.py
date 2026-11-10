@@ -38,13 +38,20 @@ def test_layout():
         f"boxes not 50/50: {ct.ptp_group.width()} vs {ct.inferno_group.width()}"
 
     pl = ct.ptp_layout
-    # 2) Genau 3 Zeilen, keine lose Widgets mehr in der PTP-Box
-    assert pl.count() == 3, f"PTP box must have exactly 3 rows, has {pl.count()}"
+    # 2) Genau 4 Zeilen, keine lose Widgets
+    assert pl.count() == 4, f"PTP box must have exactly 4 rows, has {pl.count()}"
     rows = []
     for i in range(pl.count()):
         item = pl.itemAt(i)
         assert item.layout() is not None, f"row {i} is a loose widget, expected a row layout"
         rows.append(item.layout())
+
+    # Zeile 0: Interface-Auswahl OHNE Radios; Zeile 1: Radios
+    for w in (ct.interface_combo, ct.refresh_iface_btn):
+        assert rows[0].indexOf(w) != -1, f"{w} not in PTP row 0"
+    assert rows[0].indexOf(ct.ptp_v1_radio) == -1, "radios must be moved out of row 0"
+    for w in (ct.ptp_v1_radio, ct.ptp_v2_radio):
+        assert rows[1].indexOf(w) != -1, f"{w} not in PTP row 1 (radio row)"
 
     # 3) Keine Zeile läuft über die Boxbreite hinaus (kein Clipping).
     #    contentsRect() der Box liefert exakt die verfügbare Inhaltsbreite (462px bei 1000px Fenster).
@@ -62,14 +69,31 @@ def test_layout():
 
     # 5) Zeile 2 = Start/Stop/Sync, Zeile 3 = IP+State+Offset+Freq-Statusleiste
     for w in (ct.start_ptp_btn, ct.stop_ptp_btn, ct.sync_light, ct.sync_label):
-        assert rows[1].indexOf(w) != -1, f"{w} not in PTP row 2"
+        assert rows[2].indexOf(w) != -1, f"{w} not in PTP row 2"
     for w in (ct.ip_label, ct.ptp_state_label, ct.ptp_offset_label, ct.ptp_freq_label):
-        assert rows[2].indexOf(w) != -1, f"{w} not in status strip (row 3)"
+        assert rows[3].indexOf(w) != -1, f"{w} not in status strip (row 3)"
 
     # 6) Inferno-Notiz passt bei halber Breite auf max. 2 Zeilen
     line = ct.inferno_note.fontMetrics().lineSpacing()
     assert ct.inferno_note.height() <= 2 * line + 6, \
         f"note wraps beyond 2 lines: {ct.inferno_note.height()}px vs 2x{line}px"
+
+    # 7) Am kleinstmöglichen Fenster darf keine Zeile abschneiden
+    ct.resize(ct.minimumSizeHint().width(), 750)
+    app.processEvents()
+    app.processEvents()
+    available = pl.contentsRect().width()
+    assert available > 0, "layout not activated at minimum width"
+    for i, row in enumerate(rows):
+        need = row.totalMinimumSize().width()
+        assert need <= available, \
+            f"PTP row {i} clips at min width: needs {need}px, only {available}px available"
+
+    # Notiz: am Maximum 2 Zeilen (bestehende Assertion bei 1000px bleibt),
+    # am Minimum reichen 3 Zeilen
+    line = ct.inferno_note.fontMetrics().lineSpacing()
+    assert ct.inferno_note.height() <= 3 * line + 6, \
+        f"note wraps beyond 3 lines at min width: {ct.inferno_note.height()}px"
 
     print("PASS: layout smoke test")
 

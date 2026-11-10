@@ -38,6 +38,10 @@ class MainWindow(QMainWindow):
         self._setup_tray()
         self._setup_menu_bar()
         self._load_window_state()
+
+        # Open at the smallest possible width (per spec; height/position stay saved)
+        if not self.isMaximized():
+            self.resize(self.minimumSizeHint().width(), self.height())
         
         # Connect signals
         self._connect_signals()
