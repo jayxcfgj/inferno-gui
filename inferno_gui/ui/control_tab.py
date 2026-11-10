@@ -99,7 +99,7 @@ class ControlTab(QWidget):
         self.interface_combo = QComboBox()
         self.interface_combo.setMinimumWidth(200)
         self.interface_combo.setEnabled(True)
-        iface_row.addWidget(self.interface_combo)
+        iface_row.addWidget(self.interface_combo, 1)
         
         self.refresh_iface_btn = QPushButton("↻")
         self.refresh_iface_btn.setFixedWidth(36)
@@ -116,11 +116,11 @@ class ControlTab(QWidget):
         self.ptp_version_group.addButton(self.ptp_v1_radio, 1)
         self.ptp_version_group.addButton(self.ptp_v2_radio, 2)
         self.ptp_version_group.idToggled.connect(self._on_ptp_version_toggled)
-        iface_row.addStretch()
         ptp_layout.addLayout(iface_row)
 
         # PTP version radios (own row: below interface, above start/stop)
         radio_row = QHBoxLayout()
+        radio_row.addStretch()
         radio_row.addWidget(self.ptp_v1_radio)
         radio_row.addWidget(self.ptp_v2_radio)
         radio_row.addStretch()
@@ -186,10 +186,12 @@ class ControlTab(QWidget):
         self.ptp_freq_label = QLabel("Freq: —")
         self.ptp_freq_label.setStyleSheet("color: #ccc; font-size: 11px;")
         status_strip.addWidget(self.ip_label)
+        status_strip.addStretch(1)
         status_strip.addWidget(self.ptp_state_label)
+        status_strip.addStretch(1)
         status_strip.addWidget(self.ptp_offset_label)
+        status_strip.addStretch(1)
         status_strip.addWidget(self.ptp_freq_label)
-        status_strip.addStretch()
         ptp_layout.addLayout(status_strip)
 
         # ── Middle: Inferno ALSA Plugin Control ─────────────────
@@ -197,14 +199,6 @@ class ControlTab(QWidget):
         inferno_layout = QVBoxLayout(inferno_group)
         inferno_layout.setSpacing(8)
         self.inferno_group = inferno_group
-
-        # Status row
-        inf_status_row = QHBoxLayout()
-        self.inferno_status_label = QLabel("● Inferno: Stopped")
-        self.inferno_status_label.setStyleSheet("font-size: 13px; color: #888;")
-        inf_status_row.addWidget(self.inferno_status_label)
-        inf_status_row.addStretch()
-        inferno_layout.addLayout(inf_status_row)
 
         # Tools group (NetAudio, qpwgraph, Cable – stacked vertically)
         tools_layout = QVBoxLayout()
@@ -293,7 +287,7 @@ class ControlTab(QWidget):
 
         top_row = QHBoxLayout()
         top_row.setSpacing(10)
-        top_row.addWidget(ptp_group, 1)
+        top_row.addWidget(ptp_group, 1, Qt.AlignmentFlag.AlignTop)
         top_row.addWidget(inferno_group, 1)
         layout.addLayout(top_row)
 

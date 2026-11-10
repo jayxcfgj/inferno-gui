@@ -81,6 +81,25 @@ def test_layout():
     for w in (ct.ip_label, ct.ptp_state_label, ct.ptp_offset_label, ct.ptp_freq_label):
         assert rows[3].indexOf(w) != -1, f"{w} not in status strip (row 3)"
 
+    # 6) Inferno-Statuszeile entfernt (war statisch – wird nie aktualisiert)
+    assert not hasattr(ct, "inferno_status_label"), "static Inferno status line must be gone"
+
+    # 7) Ansatz A: Zeilen füllen die Boxbreite aus (bei 1000px)
+    # Zeile 0: Combo wächst über ihr 200px-Minimum hinaus (kein Loch vor ↻)
+    assert ct.interface_combo.width() > ct.interface_combo.minimumWidth(), \
+        f"combo does not stretch: {ct.interface_combo.width()}px"
+    # Zeile 1: Radios als Paar zentriert (Spacer links und rechts)
+    assert rows[1].itemAt(0).spacerItem() is not None, "radio row missing left spacer (not centered)"
+    assert rows[1].itemAt(rows[1].count() - 1).spacerItem() is not None, \
+        "radio row missing right spacer (not centered)"
+    # Zeile 3: 3 Spacer zwischen den 4 Labels, freq letztes Item → reicht bis zur Kante
+    assert rows[3].count() >= 7, f"status strip not distributed: {rows[3].count()} items"
+    assert rows[3].indexOf(ct.ptp_freq_label) == rows[3].count() - 1, \
+        "freq label not last (trailing hole on the right)"
+    # AlignTop: PTP-Box kürzer als Inferno-Box (nicht auf deren Höhe gezogen)
+    assert ct.ptp_group.height() < ct.inferno_group.height(), \
+        f"PTP box stretched to Inferno height: {ct.ptp_group.height()} vs {ct.inferno_group.height()}"
+
     # 6) Inferno-Notiz passt bei halber Breite auf max. 2 Zeilen
     line = ct.inferno_note.fontMetrics().lineSpacing()
     assert ct.inferno_note.height() <= 2 * line + 6, \
