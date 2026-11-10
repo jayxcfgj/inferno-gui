@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle,
+    QGroupBox, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle,
     QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal, QSize
@@ -90,6 +90,8 @@ class ControlTab(QWidget):
         ptp_group = QGroupBox("PTP Clock Synchronization (statime)")
         ptp_layout = QVBoxLayout(ptp_group)
         ptp_layout.setSpacing(8)
+        self.ptp_group = ptp_group
+        self.ptp_layout = ptp_layout
 
         # Interface selection row
         iface_row = QHBoxLayout()
@@ -105,10 +107,10 @@ class ControlTab(QWidget):
         self.refresh_iface_btn.clicked.connect(self._refresh_interfaces)
         iface_row.addWidget(self.refresh_iface_btn)
         
-        iface_row.addSpacing(16)
-        iface_row.addWidget(QLabel("PTP Version:"))
-        self.ptp_v1_radio = QRadioButton("PTPv1 (IEEE 1588-2002)")
-        self.ptp_v2_radio = QRadioButton("PTPv2 (IEEE 1588-2008)")
+        self.ptp_v1_radio = QRadioButton("PTPv1")
+        self.ptp_v1_radio.setToolTip("IEEE 1588-2002")
+        self.ptp_v2_radio = QRadioButton("PTPv2")
+        self.ptp_v2_radio.setToolTip("IEEE 1588-2008")
         self.ptp_v2_radio.setChecked(True)
         self.ptp_version_group = QButtonGroup(self)
         self.ptp_version_group.addButton(self.ptp_v1_radio, 1)
@@ -122,7 +124,6 @@ class ControlTab(QWidget):
         # IP address display
         self.ip_label = QLabel("IP: —")
         self.ip_label.setStyleSheet("color: #aaa; font-size: 11px;")
-        ptp_layout.addWidget(self.ip_label)
 
         # Start/Stop buttons row
         btn_row = QHBoxLayout()
@@ -171,25 +172,26 @@ class ControlTab(QWidget):
         ptp_layout.addLayout(btn_row)
 
         # PTP Status details
-        status_grid = QGridLayout()
-        status_grid.setSpacing(4)
+        status_strip = QHBoxLayout()
+        status_strip.setSpacing(16)
         self.ptp_state_label = QLabel("State: —")
         self.ptp_state_label.setStyleSheet("color: #ccc; font-size: 11px;")
         self.ptp_offset_label = QLabel("Offset: —")
         self.ptp_offset_label.setStyleSheet("color: #ccc; font-size: 11px;")
         self.ptp_freq_label = QLabel("Freq: —")
         self.ptp_freq_label.setStyleSheet("color: #ccc; font-size: 11px;")
-        status_grid.addWidget(self.ptp_state_label, 0, 0)
-        status_grid.addWidget(self.ptp_offset_label, 0, 1)
-        status_grid.addWidget(self.ptp_freq_label, 0, 2)
-        ptp_layout.addLayout(status_grid)
-
-        layout.addWidget(ptp_group)
+        status_strip.addWidget(self.ip_label)
+        status_strip.addWidget(self.ptp_state_label)
+        status_strip.addWidget(self.ptp_offset_label)
+        status_strip.addWidget(self.ptp_freq_label)
+        status_strip.addStretch()
+        ptp_layout.addLayout(status_strip)
 
         # ── Middle: Inferno ALSA Plugin Control ─────────────────
         inferno_group = QGroupBox("Inferno ALSA Plugin (Dante Virtual Soundcard)")
         inferno_layout = QVBoxLayout(inferno_group)
         inferno_layout.setSpacing(8)
+        self.inferno_group = inferno_group
 
         # Status row
         inf_status_row = QHBoxLayout()
@@ -274,6 +276,7 @@ class ControlTab(QWidget):
         note.setWordWrap(True)
         note.setStyleSheet("color: #888; font-size: 10px;")
         inferno_layout.addWidget(note)
+        self.inferno_note = note
 
         # Quick test button
         test_row = QHBoxLayout()
@@ -283,7 +286,11 @@ class ControlTab(QWidget):
         test_row.addStretch()
         inferno_layout.addLayout(test_row)
 
-        layout.addWidget(inferno_group)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(10)
+        top_row.addWidget(ptp_group, 1)
+        top_row.addWidget(inferno_group, 1)
+        layout.addLayout(top_row)
 
         # ── Bottom: Log Terminal ────────────────────────────────
         log_group = QGroupBox("Statime Log Output (filtered)")
