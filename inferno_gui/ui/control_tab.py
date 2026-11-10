@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QGridLayout, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle,
     QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal
+from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QColor
 
 from inferno_gui.core.config import (
@@ -199,7 +199,6 @@ class ControlTab(QWidget):
         inf_status_row.addStretch()
         
         self.netaudio_btn = QPushButton("🌐 Open NetAudio Web UI")
-        self.netaudio_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
         self.netaudio_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3; color: white;
@@ -215,8 +214,17 @@ class ControlTab(QWidget):
 
         # Additional tools row
         tools_row = QHBoxLayout()
-        self.qpwgraph_btn = QPushButton("📊 Open qpwgraph")
-        self.qpwgraph_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self.qpwgraph_btn = QPushButton("Open qpwgraph")
+        try:
+            from PyQt6.QtGui import QIcon
+            _qpw_icon = QIcon("/usr/share/icons/hicolor/32x32/apps/org.rncbc.qpwgraph.png")
+            if _qpw_icon.isNull():
+                _qpw_icon = QIcon("/usr/share/icons/Numix-Circle/48/apps/org.rncbc.qpwgraph.svg")
+            if not _qpw_icon.isNull():
+                self.qpwgraph_btn.setIcon(_qpw_icon)
+                self.qpwgraph_btn.setIconSize(QSize(16, 16))
+        except Exception:
+            pass
         self.qpwgraph_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9C27B0; color: white;
@@ -227,8 +235,17 @@ class ControlTab(QWidget):
         """)
         tools_row.addWidget(self.qpwgraph_btn)
         
-        self.cable_btn = QPushButton("🔗 Open Cable")
-        self.cable_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DriveHDIcon))
+        self.cable_btn = QPushButton("Open Cable")
+        try:
+            from PyQt6.QtGui import QIcon
+            _cable_icon = QIcon("/usr/share/icons/hicolor/scalable/apps/jack-plug.svg")
+            if _cable_icon.isNull():
+                _cable_icon = QIcon("/usr/share/icons/hicolor/scalable/apps/jack-plug-dark.svg")
+            if not _cable_icon.isNull():
+                self.cable_btn.setIcon(_cable_icon)
+                self.cable_btn.setIconSize(QSize(16, 16))
+        except Exception:
+            pass
         self.cable_btn.setStyleSheet("""
             QPushButton {
                 background-color: #FF9800; color: white;
@@ -495,30 +512,45 @@ class ControlTab(QWidget):
         """Create PipeWire nodes for Inferno sink and source."""
         self._append_log("Creating PipeWire nodes for Inferno...")
         
-        sink_cmd = (
-            "pw-cli create-node adapter "
-            "'{ object.linger=1 factory.name=api.alsa.pcm.sink "
-            "node.name=Inferno_sink media.class=Audio/Sink "
-            "api.alsa.path=inferno session.suspend-timeout-seconds=0 "
-            "node.pause-on-idle=false node.suspend-on-idle=false "
-            "node.always-process=true api.alsa.headroom=128 "
-            "api.alsa.pcm.card=999 }'"
-        )
+        # Create sink node directly
+        sink_cmd = [
+            "pw-cli", "create-node", "adapter",
+            "{'object.linger=1", 
+            'factory.name=api.alsa.pcm.sink',
+            'node.name=Inferno_sink',
+            'media.class=Audio/Sink',
+            'api.alsa.path=inferno',
+            'session.suspend-timeout-seconds=0',
+            'node.pause-on-idle=false',
+            'node.suspend-on-idle=false',
+            'node.always-process=true',
+            'api.alsa.headroom=128',
+            'api.alsa.pcm.card=999'
+            '}'
+        ]
         
-        source_cmd = (
-            "pw-cli create-node adapter "
-            "'{ object.linger=1 factory.name=api.alsa.pcm.source "
-            "node.name=Inferno_source media.class=Audio/Source "
-            "api.alsa.path=inferno session.suspend-timeout-seconds=0 "
-            "node.pause-on-idle=false node.suspend-on-idle=false "
-            "node.always-process=true api.alsa.headroom=128 "
-            "api.alsa.pcm.card=999 }'"
-        )
+        # Create source node directly
+        source_cmd = [
+            "pw-cli", "create-node", "adapter",
+            "{'object.linger=1",
+            'factory.name=api.alsa.pcm.source',
+            'node.name=Inferno_source',
+            'media.class=Audio/Source',
+            'api.alsa.path=inferno',
+            'session.suspend-timeout-seconds=0',
+            'node.pause-on-idle=false',
+            'node.suspend-on-idle=false',
+            'node.always-process=true',
+            'api.alsa.headroom=128',
+            'api.alsa.pcm.card=999'
+            '}'
+        ]
         
         for name, cmd in [("Inferno sink", sink_cmd), ("Inferno source", source_cmd)]:
             proc = QProcess()
-            proc.start("bash", ["-c", cmd])
-            if not proc.waitForFinished(5000):
+            proc.start(cmd[0], cmd[1:])  # Start without bash -c
+            
+            if not proc.waitForFinished(10000):
                 self._append_log(f"Warning: {name} creation timed out")
             else:
                 output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace').strip()
@@ -531,31 +563,66 @@ class ControlTab(QWidget):
         """Destroy PipeWire nodes for Inferno sink and source."""
         self._append_log("Destroying PipeWire nodes for Inferno...")
         
-        # List all nodes and find Inferno ones
-        proc = QProcess()
-        proc.start("pw-cli", ["ls", "Node"])
-        if not proc.waitForFinished(5000):
-            self._append_log("Warning: Failed to list PipeWire nodes")
-            return
-        
-        output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace')
-        
-        # Parse node IDs for Inferno_sink and Inferno_source
+        # Simple, robust approach using subprocess
+        import subprocess
         import re
-        node_pattern = re.compile(r'id\s+(\d+),.*node\.name\s*=\s*"(Inferno_sink|Inferno_source)"')
-        matches = node_pattern.findall(output)
         
-        if not matches:
-            self._append_log("No Inferno PipeWire nodes found to destroy")
-            return
-        
-        for node_id, node_name in matches:
-            destroy_proc = QProcess()
-            destroy_proc.start("pw-cli", ["destroy", node_id])
-            if destroy_proc.waitForFinished(3000):
-                self._append_log(f"Destroyed {node_name} (ID: {node_id})")
+        try:
+            # Use shell command for reliable node listing
+            result = subprocess.run(['pw-cli', 'ls', 'Node'], 
+                                   capture_output=True, text=True, timeout=5)
+            output = result.stdout
+            
+            if output:
+                self._append_log("--- PipeWire Nodes ---")
+                self._append_log(output)
+                self._append_log("--------------------")
+                
+                # Simple approach: Look for any node with 'inferno' in name
+                # More flexible pattern that matches various formats
+                inferno_pattern = re.compile(r'inferno', re.IGNORECASE)
+                
+                # Also look for node IDs (simpler approach)
+                node_id_pattern = re.compile(r'id\s+(\d+)')
+                node_ids = node_id_pattern.findall(output)
+                
+                # Look for node names with 'inferno'
+                node_name_pattern = re.compile(r'node\.name\s*=\s*"([^"]+)"')
+                node_names = node_name_pattern.findall(output)
+                
+                # Combine and find Inferno nodes
+                inferno_nodes = []
+                for i, node_name in enumerate(node_names):
+                    if 'inferno' in node_name.lower():
+                        node_id = node_ids[i] if i < len(node_ids) else 'unknown'
+                        inferno_nodes.append((node_id, node_name))
+                
+                if inferno_nodes:
+                    self._append_log(f"Found {len(inferno_nodes)} Inferno nodes to destroy:")
+                    for node_id, node_name in inferno_nodes:
+                        self._append_log(f"  - {node_name} (ID: {node_id})")
+                    
+                    # Destroy nodes
+                    for node_id, node_name in inferno_nodes:
+                        destroy_proc = subprocess.run(
+                            ['pw-cli', 'destroy', node_id],
+                            capture_output=True, text=True, timeout=3
+                        )
+                        if destroy_proc.returncode == 0:
+                            self._append_log(f"Destroyed {node_name} (ID: {node_id})")
+                        else:
+                            self._append_log(f"Warning: Failed to destroy {node_name} (ID: {node_id})")
+                            if destroy_proc.stderr:
+                                self._append_log(f"  Error: {destroy_proc.stderr.strip()}")
+                else:
+                    self._append_log("No Inferno PipeWire nodes found to destroy")
             else:
-                self._append_log(f"Warning: Failed to destroy {node_name} (ID: {node_id})")
+                self._append_log("No PipeWire output available")
+                
+        except subprocess.TimeoutExpired:
+            self._append_log("Warning: pw-cli ls Node command timed out")
+        except Exception as e:
+            self._append_log(f"Warning: Error destroying nodes: {e}")
 
     def _reset_ptp_state(self):
         self.is_ptp_running = False
@@ -829,6 +896,26 @@ class ControlTab(QWidget):
     def get_ptp_version(self) -> str:
         return 'v1' if self.ptp_v1_radio.isChecked() else 'v2'
 
+    def _log_all_pipewire_nodes(self):
+        """Log all PipeWire nodes for debugging purposes."""
+        self._append_log("=== ALL PipeWire Nodes ===")
+        
+        proc = QProcess()
+        proc.start("pw-cli", ["ls", "Node"])
+        if proc.waitForFinished(5000):
+            output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace')
+            self._append_log(output)
+            self._append_log("=========================")
+            
+            # Check for any nodes with "inferno" in the name (case insensitive)
+            import re
+            inferno_pattern = re.compile(r'inferno', re.IGNORECASE)
+            if inferno_pattern.search(output):
+                self._append_log("FOUND: Nodes containing 'inferno' in name")
+            else:
+                self._append_log("NOTE: No nodes with 'inferno' found in current list")
+        else:
+            self._append_log("Failed to get PipeWire nodes list for logging")
 
 # Need QTextEdit import
 from PyQt6.QtWidgets import QTextEdit

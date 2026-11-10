@@ -1,13 +1,15 @@
-# statime PTPv1 configuration for Inferno
-# IEEE 1588-2002
-
-[global]
+loglevel = "info"
+sdo-id = 0
 domain = 0
-interface = "enp37s0"
-log_level = "info"
+priority1 = 251
+virtual-system-clock = true
+virtual-system-clock-base = "monotonic_raw"
+usrvclock-export = true
 
-[port]
-sync_interval = 0
-announce_interval = 1
-announce_receipt_timeout = 3
-delay_mechanism = "E2E"
+[[port]]
+interface = "enp37s0"
+network-mode = "ipv4"
+hardware-clock = "auto"
+protocol-version = "PTPv1"
+sync-interval = 0
+announce-interval = 1

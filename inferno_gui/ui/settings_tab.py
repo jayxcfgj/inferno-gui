@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle,
     QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt, QSettings, pyqtSignal
+from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QDesktopServices
 from PyQt6.QtCore import QUrl, QTimer
 
@@ -117,11 +117,6 @@ class SettingsTab(QWidget):
         self.rx_channels.setSuffix(" channels")
         audio_layout.addRow("RX Channels (Input):", self.rx_channels)
 
-        self.bind_ip = QLineEdit()
-        self.bind_ip.setPlaceholderText("Auto-detect from interface")
-        self.bind_ip.setMinimumWidth(250)
-        audio_layout.addRow("Bind IP Address:", self.bind_ip)
-
         layout.addWidget(audio_group)
 
         # ── Advanced statime Options ────────────────────────────
@@ -162,8 +157,15 @@ class SettingsTab(QWidget):
 
         # PipeWire override
         pw_override_path = Path.home() / ".config/systemd/user/pipewire.service.d/override.conf"
-        self.pw_override_btn = QPushButton("📝 Open PipeWire Override")
-        self.pw_override_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        self.pw_override_btn = QPushButton("Open PipeWire Override")
+        try:
+            from PyQt6.QtGui import QIcon
+            _cfg_icon = QIcon("/usr/share/icons/Papirus/24x24/mimetypes/text-x-generic.svg")
+            if not _cfg_icon.isNull():
+                self.pw_override_btn.setIcon(_cfg_icon)
+                self.pw_override_btn.setIconSize(QSize(16, 16))
+        except Exception:
+            pass
         self.pw_override_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(pw_override_path)))
         )
@@ -175,8 +177,15 @@ class SettingsTab(QWidget):
         
         # PTPv1 config
         ptpv1_path = get_default_statime_config('v1')
-        self.ptpv1_btn = QPushButton("📝 Open PTPv1 Config")
-        self.ptpv1_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        self.ptpv1_btn = QPushButton("Open PTPv1 Config")
+        try:
+            from PyQt6.QtGui import QIcon
+            _cfg_icon = QIcon("/usr/share/icons/Papirus/24x24/mimetypes/text-x-generic.svg")
+            if not _cfg_icon.isNull():
+                self.ptpv1_btn.setIcon(_cfg_icon)
+                self.ptpv1_btn.setIconSize(QSize(16, 16))
+        except Exception:
+            pass
         self.ptpv1_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv1_path)))
         )
@@ -184,8 +193,15 @@ class SettingsTab(QWidget):
         
         # PTPv2 config
         ptpv2_path = get_default_statime_config('v2')
-        self.ptpv2_btn = QPushButton("📝 Open PTPv2 Config")
-        self.ptpv2_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        self.ptpv2_btn = QPushButton("Open PTPv2 Config")
+        try:
+            from PyQt6.QtGui import QIcon
+            _cfg_icon = QIcon("/usr/share/icons/Papirus/24x24/mimetypes/text-x-generic.svg")
+            if not _cfg_icon.isNull():
+                self.ptpv2_btn.setIcon(_cfg_icon)
+                self.ptpv2_btn.setIconSize(QSize(16, 16))
+        except Exception:
+            pass
         self.ptpv2_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv2_path)))
         )
@@ -203,7 +219,15 @@ class SettingsTab(QWidget):
         else:
             user_home = Path.home()
         alsa_rc_path = Path(user_home) / ".asoundrc"
-        self.asoundrc_btn = QPushButton("📝 Open ~/.asoundrc")
+        self.asoundrc_btn = QPushButton("Open ~/.asoundrc")
+        try:
+            from PyQt6.QtGui import QIcon
+            _rc_icon = QIcon("/usr/share/icons/Papirus/24x24/mimetypes/text-x-generic.svg")
+            if not _rc_icon.isNull():
+                self.asoundrc_btn.setIcon(_rc_icon)
+                self.asoundrc_btn.setIconSize(QSize(16, 16))
+        except Exception:
+            pass
         self.asoundrc_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
         )
@@ -294,8 +318,6 @@ class SettingsTab(QWidget):
                 self.ip_display.setText(ip)
                 self.ip_display.setStyleSheet("color: #4caf50; font-family: monospace;")
                 # Auto-fill bind IP if empty
-                if not self.bind_ip.text():
-                    self.bind_ip.setText(ip)
             else:
                 self.ip_display.setText("(no IP assigned)")
                 self.ip_display.setStyleSheet("color: #ffc107; font-family: monospace;")
@@ -397,8 +419,6 @@ SystemCallFilter=@clock
                 self.sample_rate.setCurrentIndex(idx)
             self.tx_channels.setValue(self.inferno_config.tx_channels)
             self.rx_channels.setValue(self.inferno_config.rx_channels)
-            if self.inferno_config.bind_ip:
-                self.bind_ip.setText(self.inferno_config.bind_ip)
         
         # Load interface selection
         saved_iface = settings.value("selected_interface", "", type=str)
@@ -429,7 +449,6 @@ SystemCallFilter=@clock
             'sample_rate': self.sample_rate.currentData(),
             'tx_channels': self.tx_channels.value(),
             'rx_channels': self.rx_channels.value(),
-            'bind_ip': self.bind_ip.text(),
             'ptp_domain': self.ptp_domain.value(),
             'sync_interval': self.sync_interval.value(),
             'announce_interval': self.announce_interval.value(),
@@ -461,7 +480,6 @@ SystemCallFilter=@clock
             'sample_rate': self.sample_rate.currentData(),
             'tx_channels': self.tx_channels.value(),
             'rx_channels': self.rx_channels.value(),
-            'bind_ip': self.bind_ip.text(),
             'ptp_domain': self.ptp_domain.value(),
             'sync_interval': self.sync_interval.value(),
             'announce_interval': self.announce_interval.value(),
@@ -478,7 +496,6 @@ SystemCallFilter=@clock
             self.sample_rate,
             self.tx_channels,
             self.rx_channels,
-            self.bind_ip,
             self.ptp_domain,
             self.sync_interval,
             self.announce_interval,
@@ -506,7 +523,6 @@ SystemCallFilter=@clock
         self.inferno_config.set('sample_rate', self.sample_rate.currentData())
         self.inferno_config.set('tx_channels', self.tx_channels.value())
         self.inferno_config.set('rx_channels', self.rx_channels.value())
-        self.inferno_config.set('bind_ip', self.bind_ip.text())
         self.inferno_config.save()
         
         # Save interface
@@ -579,9 +595,9 @@ SystemCallFilter=@clock
                         else:
                             cfg.set('log_level', self.log_level.currentText().lower())
                         
-                        # Port settings (array format)
-                        cfg.set('port[0].sync_interval', self.sync_interval.value())
-                        cfg.set('port[0].announce_interval', self.announce_interval.value())
+                        # Port settings - use hyphenated names as statime expects
+                        cfg.set('port[0].sync-interval', self.sync_interval.value())
+                        cfg.set('port[0].announce-interval', self.announce_interval.value())
                         cfg.save()
                 except Exception:
                     pass  # Ignore config update errors
@@ -599,7 +615,6 @@ SystemCallFilter=@clock
             self.sample_rate.setCurrentText("48000 Hz")
             self.tx_channels.setValue(24)
             self.rx_channels.setValue(24)
-            self.bind_ip.clear()
             self.ptp_domain.setValue(0)
             self.sync_interval.setValue(0)
             self.announce_interval.setValue(1)
@@ -636,7 +651,6 @@ SystemCallFilter=@clock
         self.sample_rate.setEnabled(enabled)
         self.tx_channels.setEnabled(enabled)
         self.rx_channels.setEnabled(enabled)
-        self.bind_ip.setEnabled(enabled)
         self.ptp_domain.setEnabled(enabled)
         self.sync_interval.setEnabled(enabled)
         self.announce_interval.setEnabled(enabled)
