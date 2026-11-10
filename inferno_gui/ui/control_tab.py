@@ -197,7 +197,12 @@ class ControlTab(QWidget):
         self.inferno_status_label.setStyleSheet("font-size: 13px; color: #888;")
         inf_status_row.addWidget(self.inferno_status_label)
         inf_status_row.addStretch()
-        
+        inferno_layout.addLayout(inf_status_row)
+
+        # Tools group (NetAudio, qpwgraph, Cable – stacked vertically)
+        tools_layout = QVBoxLayout()
+        tools_layout.setSpacing(6)
+
         self.netaudio_btn = QPushButton("🌐 Open NetAudio Web UI")
         self.netaudio_btn.setStyleSheet("""
             QPushButton {
@@ -209,11 +214,8 @@ class ControlTab(QWidget):
         """)
         self.netaudio_btn.setEnabled(True)  # Always enabled
         self.netaudio_btn.clicked.connect(self._open_netaudio)
-        inf_status_row.addWidget(self.netaudio_btn)
-        inferno_layout.addLayout(inf_status_row)
+        tools_layout.addWidget(self.netaudio_btn)
 
-        # Additional tools row
-        tools_row = QHBoxLayout()
         self.qpwgraph_btn = QPushButton("Open qpwgraph")
         try:
             from PyQt6.QtGui import QIcon
@@ -233,8 +235,8 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #7B1FA2; }
         """)
-        tools_row.addWidget(self.qpwgraph_btn)
-        
+        tools_layout.addWidget(self.qpwgraph_btn)
+
         self.cable_btn = QPushButton("Open Cable")
         try:
             from PyQt6.QtGui import QIcon
@@ -254,10 +256,9 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #F57C00; }
         """)
-        tools_row.addWidget(self.cable_btn)
-        
-        tools_row.addStretch()
-        inferno_layout.addLayout(tools_row)
+        tools_layout.addWidget(self.cable_btn)
+
+        inferno_layout.addLayout(tools_layout)
 
         # Note about inferno auto-start
         note = QLabel(
