@@ -14,7 +14,7 @@ kleiner ziehen kann (Qt-Mindestbreite).
 ## Goals
 
 - `ptp_layout` bekommt **4 Zeilen**: ① Interface+Combo+↻ ② Radios ③ Start/Stop+Sync ④ Statusleiste.
-- Fenster öffnet mit der **Qt-Mindestbreite** (neu: ~775px, statt 1000px default).
+- Fenster öffnet mit der **Qt-Mindestbreite** (neu: ~764px (gemessen; Schätzung war ~775px), statt 1000px default).
 - Gesamthöhe unverändert (Radios-Zeile nutzt den ~112px-Spielraum der PTP-Box).
 - Offscreen-Smoke-Test deckt die neue Mindestbreite ab (kein Clipping am Minimum).
 
@@ -27,12 +27,12 @@ kleiner ziehen kann (Qt-Mindestbreite).
 ## Constraints (gemessen)
 
 - Zeilen-Minima nach dem Umzug: ① ~297px ② ~126px ③ **421px (breitenbestimmend)** ④ 310px.
-- PTP-Box-Minimum: ~445px · Inferno-Box-Minimum: ~289px · ControlTab-Min: **~760px** · Fenster-Min: **~775px**.
+- PTP-Box-Minimum: ~445px · Inferno-Box-Minimum: ~289px · ControlTab-Min: **~760px** · Fenster-Min: **~764px (gemessen; Schätzung war ~775px)**.
 - Radios-Text/Tooltip wie gehalten: `PTPv1`/`PTPv2`, IEEE im Tooltip.
 
 ## ⚠️ Konsequenz: 50/50 gilt am Minimum NICHT
 
-Bei Fensterbreite = Minimum (~775px) kann Qt die Boxen nicht gleich teilen:
+Bei Fensterbreite = Minimum (~764px, gemessen; Schätzung war ~775px) kann Qt die Boxen nicht gleich teilen:
 Minimums zuerst → **PTP ~445px, Inferno ~289px**. Gleichheit (50/50) setzt erst
 ab ~916px ein. Die Weisung „Breite = kleinstmögliche" hat Vorrang (explizit
 befohlen, auch nach Wahl von Weg 1); beim Aufziehen ≥916px gilt 50/50 wieder.

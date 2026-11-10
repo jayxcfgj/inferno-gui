@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Zeilen-Minima nach dem Umzug (gemessen): ① Interface ~297px ② Radios ~126px ③ **Start/Stop+Sync 421px (breitenbestimmend)** ④ Statusleiste 310px.
-- PTP-Box-Minimum ~445px, Inferno-Box-Minimum ~289px, ControlTab-Minimum ~760px, Fenster-Minimum ~775px.
+- PTP-Box-Minimum ~445px, Inferno-Box-Minimum ~289px, ControlTab-Minimum ~760px, Fenster-Minimum ~764px (gemessen; Schätzung war ~775px).
 - Radio-Texte exakt `PTPv1`/`PTPv2`, IEEE nur als Tooltip (`IEEE 1588-2002`/`IEEE 1588-2008`) – unverändert vom letzten Task.
 - **Kein** Trimming bestehender Zeilen (Sync-Label bleibt `setMinimumWidth(140)`, Combo bleibt 200px), **kein** manuelles Stretch-/Größen-Tuning der Boxen.
 - Clamp-Regel: `if not self.isMaximized(): self.resize(self.minimumSizeHint().width(), self.height())` – **nach** `_load_window_state()`. Höhe und Position weiterhin aus QSettings.
@@ -165,7 +165,7 @@ git commit -m "feat: PTP radios in own row below interface, window opens at mini
 ```bash
 sudo /home/jacob/audio-inferno/gui/run_gui.sh
 ```
-- Fenster öffnet schmal (~775px), nichts abgeschnitten, Höhe unverändert.
+- Fenster öffnet schmal (~764px, gemessen; Schätzung war ~775px), nichts abgeschnitten, Höhe unverändert.
 - PTPv1/v2 auswählen, GUI neu starten → Auswahl bleibt (QSettings-Loop).
 - Aufziehen ≥916px → beide Boxen gleich breit (50/50); Fenster zu + neu öffnen → wieder Minimum.
 - Interface-Wechsel, Start/Stop-Sync, "Test ALSA Device" unverändert.

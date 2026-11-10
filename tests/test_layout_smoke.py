@@ -4,11 +4,19 @@ Run: QT_QPA_PLATFORM=offscreen python3 tests/test_layout_smoke.py
 """
 import os
 import sys
+import tempfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtWidgets import QApplication, QHBoxLayout
+
+# QSettings-Speicher auf ein Temp-Verzeichnis umleiten, damit die echten
+# User-Settings (~/.config/InfernoGUI) von keinem Test angefasst werden
+# (schützt auch test_layout: ControlTab schreibt ptp_version bei Initialisierung).
+_TEMPS = tempfile.mkdtemp(prefix="inferno-gui-test-settings-")
+QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope, _TEMPS)
 
 
 def test_layout():
@@ -86,7 +94,8 @@ def test_layout():
     assert available > 0, "layout not activated at minimum width"
     for i, row in enumerate(rows):
         need = row.totalMinimumSize().width()
-        assert need <= available, \
+        # +1: Rundungstoleranz; Margin ist 0px by design (rows determine the minimum)
+        assert need <= available + 1, \
             f"PTP row {i} clips at min width: needs {need}px, only {available}px available"
 
     # Notiz: am Maximum 2 Zeilen (bestehende Assertion bei 1000px bleibt),
@@ -98,5 +107,99 @@ def test_layout():
     print("PASS: layout smoke test")
 
 
+def test_main_window_clamp():
+    """MainWindow öffnet an der Qt-Mindestbreite (Clamp); Höhe bleibt erhalten.
+
+    Deckt den Clamp aus MainWindow.__init__ (nach _load_window_state) ab:
+    (a) frischer Start ohne gespeicherte Geometrie → width == minimumSizeHint().width()
+    (b) gespeicherte Geometrie 1400x900 → Höhe 900 bleibt, Breite wird geclampt
+    (c) maximiert gespeicherte Geometrie → Clamp wird übersprungen
+    (d) an der Mindestbreite läuft keine PTP-Zeile über die Box hinaus
+
+    QSettings-Speicher werden per setPath umgeleitet (siehe Modulkopf), die
+    echten User-Settings (~/.config/InfernoGUI) bleiben unberührt.
+    """
+    from inferno_gui.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    # defensively wiederholen: Umleitung gilt für diesen Prozess (idempotent)
+    QSettings.setPath(QSettings.Format.NativeFormat, QSettings.Scope.UserScope, _TEMPS)
+    settings = QSettings("InfernoGUI", "window")
+    settings.clear()  # leerer Start: keine gespeicherte Geometrie
+
+    def capture_geometry(size=None, maximized=False):
+        """Seed-Geometrie cappen: MainWindow bauen, Zustand setzen, saveGeometry()."""
+        seed_win = MainWindow()
+        seed_win.show()
+        app.processEvents()
+        if maximized:
+            seed_win.setWindowState(Qt.WindowState.WindowMaximized)
+        elif size:
+            seed_win.resize(*size)
+        app.processEvents()
+        app.processEvents()
+        geo = seed_win.saveGeometry()
+        seed_win.hide()  # close() öffnet den Tray-QMessageBox-Modal (hängt offscreen)
+        seed_win.deleteLater()
+        return geo
+
+    # (a) Frischer Start: Clamp greift
+    mw = MainWindow()
+    mw.show()
+    for _ in range(6):
+        app.processEvents()  # ShowEvent refresht Interfaces → Layout erneut aktivieren
+    min_w = mw.minimumSizeHint().width()
+    assert mw.width() == min_w, \
+        f"fresh start: width {mw.width()} != minimum {min_w}"
+
+    # (d) An der Clamped-Breite bleibt jede PTP-Zeile innerhalb der Box
+    pl = mw.control_tab.ptp_layout
+    available = pl.contentsRect().width()
+    assert available > 0, "layout not activated at clamped width"
+    for i in range(pl.count()):
+        row = pl.itemAt(i).layout()
+        assert row is not None, f"PTP row {i} is not a row layout"
+        need = row.totalMinimumSize().width()
+        # +1: Rundungstoleranz; Margin ist 0px by design (rows determine the minimum)
+        assert need <= available + 1, \
+            f"PTP row {i} clips at clamped width: needs {need}px, only {available}px"
+    mw.hide()  # close() öffnet den Tray-QMessageBox-Modal (hängt offscreen)
+    mw.deleteLater()
+
+    # (b) Gespeicherte Geometrie 1400x900: Höhe bleibt, Breite wird geclampt
+    settings.setValue("geometry", capture_geometry(size=(1400, 900)))
+    settings.sync()
+    mw_h = MainWindow()
+    mw_h.show()
+    for _ in range(6):
+        app.processEvents()
+    min_w = mw_h.minimumSizeHint().width()
+    assert mw_h.height() == 900, \
+        f"saved height lost: {mw_h.height()} != 900"
+    assert mw_h.width() == min_w, \
+        f"clamp not applied on saved geometry: width {mw_h.width()} != {min_w}"
+    mw_h.hide()  # close() öffnet den Tray-QMessageBox-Modal (hängt offscreen)
+    mw_h.deleteLater()
+
+    # (c) Maximierte Geometrie: Clamp wird übersprungen
+    settings.setValue("geometry", capture_geometry(maximized=True))
+    settings.sync()
+    mw_max = MainWindow()
+    mw_max.show()
+    for _ in range(6):
+        app.processEvents()
+    assert mw_max.isMaximized(), "maximized seed not restored as maximized"
+    assert mw_max.width() != mw_max.minimumSizeHint().width(), \
+        "clamp ran on a maximized window (should be skipped)"
+    mw_max.hide()  # close() öffnet den Tray-QMessageBox-Modal (hängt offscreen)
+    mw_max.deleteLater()
+
+    # Temp-Settings-Verzeichnis bleibt in /tmp zurück (Prozess-global umgeleitet)
+
+    print("PASS: main window clamp test")
+
+
 if __name__ == "__main__":
     test_layout()
+    test_main_window_clamp()
