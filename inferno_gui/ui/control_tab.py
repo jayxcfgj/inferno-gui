@@ -258,6 +258,12 @@ class ControlTab(QWidget):
         """)
         tools_layout.addWidget(self.cable_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
+        # Equalize widths: all buttons as wide as the widest one
+        _tools = (self.netaudio_btn, self.qpwgraph_btn, self.cable_btn)
+        _max_w = max(b.sizeHint().width() for b in _tools)
+        for _b in _tools:
+            _b.setFixedWidth(_max_w)
+
         inferno_layout.addLayout(tools_layout)
 
         # Note about inferno auto-start
