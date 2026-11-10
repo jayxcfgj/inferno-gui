@@ -86,12 +86,21 @@ def test_layout():
 
     # 7) Ansatz A: Zeilen füllen die Boxbreite aus (bei 1000px)
     # Zeile 0: Combo wächst über ihr 200px-Minimum hinaus (kein Loch vor ↻)
-    assert ct.interface_combo.width() > ct.interface_combo.minimumWidth(), \
-        f"combo does not stretch: {ct.interface_combo.width()}px"
+    _gap = ct.refresh_iface_btn.x() - (ct.interface_combo.x() + ct.interface_combo.width())
+    assert _gap <= 8, \
+        f"combo does not reach the refresh button (hole on the right): {_gap}px gap"
+    # Stretch-Faktor 1: die gesamte Zusatzbreite geht an die Combo, nicht an das Label
+    _lbl = rows[0].itemAt(0).widget()
+    assert _lbl.width() <= _lbl.sizeHint().width() + 2, \
+        f"combo does not absorb the extra width (stretch factor missing): label {_lbl.width()}px vs natural {_lbl.sizeHint().width()}px"
     # Zeile 1: Radios als Paar zentriert (Spacer links und rechts)
     assert rows[1].itemAt(0).spacerItem() is not None, "radio row missing left spacer (not centered)"
     assert rows[1].itemAt(rows[1].count() - 1).spacerItem() is not None, \
         "radio row missing right spacer (not centered)"
+    # Symmetrie: beide Spacer gleich groß (Paar wirklich mittig)
+    _sl = rows[1].itemAt(0).geometry().width()
+    _sr = rows[1].itemAt(rows[1].count() - 1).geometry().width()
+    assert abs(_sl - _sr) <= 1, f"radio spacers asymmetric: {_sl}px vs {_sr}px"
     # Zeile 3: 3 Spacer zwischen den 4 Labels, freq letztes Item → reicht bis zur Kante
     assert rows[3].count() >= 7, f"status strip not distributed: {rows[3].count()} items"
     assert rows[3].indexOf(ct.ptp_freq_label) == rows[3].count() - 1, \
