@@ -816,8 +816,14 @@ class ControlTab(QWidget):
     def _test_alsa_device(self):
         """Test if inferno ALSA device is available."""
         import subprocess
+        import os
         try:
-            result = subprocess.run(['aplay', '-L'], capture_output=True, text=True, timeout=5)
+            # Run as actual user so ~/.asoundrc is read correctly
+            sudo_user = os.environ.get('SUDO_USER', 'jacob')
+            result = subprocess.run(
+                ['sudo', '-u', sudo_user, 'aplay', '-L'],
+                capture_output=True, text=True, timeout=5
+            )
             lines = [l for l in result.stdout.split('\n') if 'inferno' in l.lower()]
             if lines:
                 self._append_log("Inferno ALSA device found:")
