@@ -17,7 +17,7 @@
 - Kein funktionaler Eingriff: alle Widgets bleiben dieselben Objekte, Signale (`ptp_version_group`, `idToggled`), QSettings-Pfade und Slots unverändert; **einziger entfernter Code:** `inferno_status_label`/`inf_status_row` (statischer Text, grep: keine anderen Referenzen).
 - Dateien: **nur** `inferno_gui/ui/control_tab.py` und `tests/test_layout_smoke.py`. Settings-Tab, `main_window.py`, Icons unverändert.
 - Nach `py_compile`: **beide** geänderten Dateien? Nein – nur `control_tab.py` wird installiert; Test-Datei nicht. Kopie: `cp inferno_gui/ui/control_tab.py /home/jacob/audio-inferno/gui/inferno_gui/ui/` + `diff -q`.
-- Verifikation: `QT_QPA_PLATFORM=offscreen /tmp/opencode/inferno-dev/bin/pytest tests/ -q` → grün (3 Tests: `test_layout`, `test_main_window_clamp` + …); `ruff check tests/ inferno_gui/ui/control_tab.py inferno_gui/ui/main_window.py` → Parität zur Basis **`d5c865b`** (keine neuen Findings, gleiche Rule-Histogramme; Zeilennummern dürfen sich verschieben).
+- Verifikation: `QT_QPA_PLATFORM=offscreen /tmp/opencode/inferno-dev/bin/pytest tests/ -q` → grün (2 Tests: `test_layout`, `test_main_window_clamp`); `ruff check tests/ inferno_gui/ui/control_tab.py inferno_gui/ui/main_window.py` → Parität zur Basis **`d5c865b`** (keine neuen Findings, gleiche Rule-Histogramme; Zeilennummern dürfen sich verschieben).
 - Commit-Message: `feat: distribute PTP rows across box width, top-align PTP box, drop static Inferno status line`.
 
 ## Review Focus

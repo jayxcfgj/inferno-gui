@@ -61,5 +61,5 @@ Bestehende Assertions bleiben alle gültig (4 Zeilen, Membership, 50/50 bei 1000
 
 - `QT_QPA_PLATFORM=offscreen /tmp/opencode/inferno-dev/bin/pytest tests/ -q` → grün.
 - `ruff check`-Parität zur Basis (keine neuen Findings).
-- Beide Dateien nach `/home/jacob/audio-inferno/gui/inferno_gui/ui/` kopieren, `diff -q` → byte-identisch.
+- `control_tab.py` nach `/home/jacob/audio-inferno/gui/inferno_gui/ui/` kopieren (Test-Datei wird nicht installiert), `diff -q` → byte-identisch.
 - Manuelle Abnahme (User, `sudo …/run_gui.sh`): kein Loch rechts, Statuszeile kompakt, „Inferno: Stopped" weg, Radios/Start/Stop/Test-ALSA unverändert.
