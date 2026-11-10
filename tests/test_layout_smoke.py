@@ -228,6 +228,77 @@ def test_main_window_clamp():
     print("PASS: main window clamp test")
 
 
+def test_tools_buttons_wired():
+    """Regression: f6a9006 removed the clicked.connect lines for two tool buttons."""
+    app = QApplication.instance() or QApplication(sys.argv)
+    from inferno_gui.ui.control_tab import ControlTab
+
+    ct = ControlTab()
+    app.processEvents()
+    for name in ("netaudio_btn", "qpwgraph_btn", "cable_btn"):
+        b = getattr(ct, name)
+        assert b.receivers(b.clicked) >= 1, f"{name} has no clicked connection"
+
+
+def test_netaudio_autostart_and_log():
+    """_open_netaudio starts the daemon first, opens the web UI, and logs failures."""
+    app = QApplication.instance() or QApplication(sys.argv)
+    import subprocess
+
+    from inferno_gui.ui.control_tab import ControlTab
+
+    ct = ControlTab()
+    app.processEvents()
+    calls = []
+
+    class _FakeProc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        calls.append(list(cmd))
+        return _FakeProc()
+
+    orig_run = subprocess.run
+    subprocess.run = fake_run
+    try:
+        ct._open_netaudio()
+    finally:
+        subprocess.run = orig_run
+
+    # 1) daemon start läuft zuerst, danach daemon web --open
+    start_idx = next((i for i, c in enumerate(calls) if "daemon" in c and "start" in c), None)
+    open_idx = next((i for i, c in enumerate(calls) if "daemon" in c and "web" in c and "--open" in c), None)
+    assert start_idx is not None, f"daemon start never called: {calls}"
+    assert open_idx is not None and open_idx > start_idx, f"web --open missing or before start: {calls}"
+    # beide rufen den netaudio-Binary-Pfad auf
+    for c in (calls[start_idx], calls[open_idx]):
+        assert any(part.endswith("/.local/bin/netaudio") for part in c), f"wrong binary: {c}"
+
+    # 2) Fehlerfall: start schlägt fehl → Meldung im Log, web wird NICHT geöffnet
+    calls.clear()
+
+    class _FailProc:
+        returncode = 1
+        stdout = ""
+        stderr = "Daemon is not running"
+
+    def fail_run(cmd, **kw):
+        calls.append(list(cmd))
+        return _FailProc()
+
+    subprocess.run = fail_run
+    try:
+        ct._open_netaudio()
+    finally:
+        subprocess.run = orig_run
+
+    log_text = ct.terminal_output.toPlainText()
+    assert "daemon start failed" in log_text, f"failure not logged: {log_text[-300:]!r}"
+    assert not any("web" in c for c in calls), f"web opened despite failed start: {calls}"
+
+
 if __name__ == "__main__":
     test_layout()
     test_main_window_clamp()

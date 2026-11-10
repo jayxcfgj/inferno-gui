@@ -236,6 +236,7 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #7B1FA2; }
         """)
+        self.qpwgraph_btn.clicked.connect(self._open_qpwgraph)
         tools_layout.addWidget(self.qpwgraph_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.cable_btn = QPushButton("Open Cable")
@@ -257,6 +258,7 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #F57C00; }
         """)
+        self.cable_btn.clicked.connect(self._open_cable)
         tools_layout.addWidget(self.cable_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         # Equalize widths: all buttons as wide as the widest one
@@ -869,16 +871,27 @@ class ControlTab(QWidget):
                 self._append_log(f"Error opening Cable: {e}")
 
     def _open_netaudio(self):
-        """Open netaudio web interface using netaudio CLI."""
+        """Open netaudio web interface (auto-starts the daemon if needed)."""
         import subprocess
         import os
+        # Get actual user (not root) to run netaudio command
+        sudo_user = os.environ.get('SUDO_USER', 'jacob')
+        # Use full path to netaudio (installed via pipx for the user)
+        netaudio_path = f"/home/{sudo_user}/.local/bin/netaudio"
+        base = ['sudo', '-u', sudo_user, netaudio_path]
         try:
-            # Get actual user (not root) to run netaudio command
-            sudo_user = os.environ.get('SUDO_USER', 'jacob')
-            # Use full path to netaudio (installed via pipx for the user)
-            netaudio_path = f"/home/{sudo_user}/.local/bin/netaudio"
-            # Run as the actual user so it can connect to their netaudio daemon
-            subprocess.Popen(['sudo', '-u', sudo_user, netaudio_path, 'daemon', 'web', '--open'])
+            # Start daemon if not running ("already running" exits 0)
+            r = subprocess.run(base + ['daemon', 'start'],
+                               capture_output=True, text=True, timeout=15)
+            if r.returncode != 0:
+                self._append_log(f"netaudio daemon start failed: {(r.stderr or r.stdout).strip()}")
+                return
+            r = subprocess.run(base + ['daemon', 'web', '--open'],
+                               capture_output=True, text=True, timeout=15)
+            if r.returncode != 0:
+                self._append_log(f"netaudio web open failed: {(r.stderr or r.stdout).strip()}")
+        except subprocess.TimeoutExpired:
+            self._append_log("netaudio command timed out")
         except FileNotFoundError:
             self._append_log("netaudio command not found - install netaudio first")
         except Exception as e:
