@@ -214,7 +214,7 @@ class ControlTab(QWidget):
         """)
         self.netaudio_btn.setEnabled(True)  # Always enabled
         self.netaudio_btn.clicked.connect(self._open_netaudio)
-        tools_layout.addWidget(self.netaudio_btn)
+        tools_layout.addWidget(self.netaudio_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.qpwgraph_btn = QPushButton("Open qpwgraph")
         try:
@@ -235,7 +235,7 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #7B1FA2; }
         """)
-        tools_layout.addWidget(self.qpwgraph_btn)
+        tools_layout.addWidget(self.qpwgraph_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.cable_btn = QPushButton("Open Cable")
         try:
@@ -256,7 +256,7 @@ class ControlTab(QWidget):
             }
             QPushButton:hover { background-color: #F57C00; }
         """)
-        tools_layout.addWidget(self.cable_btn)
+        tools_layout.addWidget(self.cable_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         inferno_layout.addLayout(tools_layout)
 
