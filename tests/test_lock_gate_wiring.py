@@ -175,6 +175,32 @@ def test_stop_during_wait_clears_flag(monkeypatch):
     assert created == []
 
 
+def test_stop_during_starting_window_clears_gate_state(monkeypatch):
+    """User-Stop waehrend des 2,5-s-Startfensters (_ptp_starting): Gate-State
+    muss bedingungslos aufgeraeumt werden, damit _verify_ptp_startup danach
+    keine Nodes mehr erzeugen kann."""
+    ct, created = _make_tab(monkeypatch)
+    ct.start_ptp()
+    # Start-Fenster aktiv: _verify_ptp_startup wurde noch NICHT aufgerufen,
+    # is_ptp_running ist daher noch False.
+    assert ct._ptp_starting is True
+    assert ct.is_ptp_running is False
+    assert ct._awaiting_lock is True
+    ct.stop_ptp()
+    assert ct._awaiting_lock is False
+    assert ct._lock_gate is None
+    # Danach feuert _verify_ptp_startup doch noch - ohne Gate darf kein
+    # Node-Aufruf mehr passieren, auch nicht bei stabilem Lock.
+    ct._verify_ptp_startup()
+    monkeypatch.setattr(
+        ct.parser, "get_sync_status",
+        lambda: {'state': 'SLAVE', 'offset_ns': 500, 'freq_ppb': None},
+    )
+    for _ in range(5):
+        ct._update_status_panel()
+    assert created == [], "no node creation after stop during starting window"
+
+
 def test_ptp_exit_before_lock_clears_flag(monkeypatch):
     ct, created = _make_tab(monkeypatch)
     ct.start_ptp()

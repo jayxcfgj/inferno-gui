@@ -516,6 +516,12 @@ class ControlTab(QWidget):
 
     def stop_ptp(self):
         """Stop statime PTP daemon."""
+        # Gate-State bedingungslos aufraeumen: waehrend des 2,5-s-Startfensters
+        # (_ptp_starting) ist is_ptp_running noch False - ein User-Stop darf
+        # trotzdem _awaiting_lock/_lock_gate loeschen, sonst koennte ein
+        # spaeteres _verify_ptp_startup doch noch Nodes erzeugen.
+        self._awaiting_lock = False
+        self._lock_gate = None
         if self.is_ptp_running and self.ptp_process:
             self._append_log("Stopping PTP...")
             self.ptp_process.terminate()
@@ -539,7 +545,7 @@ class ControlTab(QWidget):
         # Create sink node directly
         sink_cmd = [
             "pw-cli", "create-node", "adapter",
-            "{'object.linger=1", 
+            'object.linger=1',
             'factory.name=api.alsa.pcm.sink',
             'node.name=Inferno_sink',
             'media.class=Audio/Sink',
@@ -550,13 +556,12 @@ class ControlTab(QWidget):
             'node.always-process=true',
             'api.alsa.headroom=128',
             'api.alsa.pcm.card=999'
-            '}'
         ]
         
         # Create source node directly
         source_cmd = [
             "pw-cli", "create-node", "adapter",
-            "{'object.linger=1",
+            'object.linger=1',
             'factory.name=api.alsa.pcm.source',
             'node.name=Inferno_source',
             'media.class=Audio/Source',
@@ -567,7 +572,6 @@ class ControlTab(QWidget):
             'node.always-process=true',
             'api.alsa.headroom=128',
             'api.alsa.pcm.card=999'
-            '}'
         ]
         
         for name, cmd in [("Inferno sink", sink_cmd), ("Inferno source", source_cmd)]:
