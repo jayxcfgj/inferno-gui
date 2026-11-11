@@ -11,7 +11,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt6.QtCore import QSettings, QProcess
+from PyQt6.QtCore import QProcess, QSettings
 
 # QSettings-Speicher auf ein Temp-Verzeichnis umleiten, damit die echten
 # User-Settings (~/.config/InfernoGUI) von keinem Test angefasst werden.
@@ -79,8 +79,8 @@ def _make_tab(monkeypatch):
     """
     app = _get_app()
 
-    import inferno_gui.ui.control_tab as ct_mod
     import inferno_gui.core.config as cfg_mod
+    import inferno_gui.ui.control_tab as ct_mod
     from inferno_gui.ui.control_tab import ControlTab
 
     monkeypatch.setattr(ct_mod, "QProcess", FakeQProcess)

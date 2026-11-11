@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from inferno_gui.core.lock_gate import LockGate
 
+
 def test_lock_after_five_stable_ticks():
     g = LockGate(threshold_ns=1000, required_ticks=5)
     for _ in range(4):
