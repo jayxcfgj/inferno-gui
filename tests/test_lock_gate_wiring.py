@@ -68,14 +68,17 @@ def _get_app():
     return _APP
 
 
-def _make_tab(monkeypatch):
+def _make_tab(monkeypatch, qprocess_cls=None):
     """ControlTab mit gemockten externen Abhaengigkeiten bauen.
 
-    - QProcess (Modulinferno_gui.ui.control_tab) -> FakeQProcess
+    - QProcess (Modulinferno_gui.ui.control_tab) -> qprocess_cls (Default: FakeQProcess)
     - get_statime_binary -> existierender Pfad (/bin/sh)
     - get_default_statime_config -> Temp-Datei (nicht angelegt, load() -> False)
     - Interface-Combo mit einem echten Item bestücken
     - _create_pipewire_nodes/_destroy_pipewire_nodes -> Zähler/No-op
+
+    Hinweis: init_ui() erzeugt ptp_process bereits im Konstruktor - daher
+    muss die QProcess-Klasse VOR dem ControlTab() gepatcht werden.
     """
     app = _get_app()
 
@@ -83,7 +86,7 @@ def _make_tab(monkeypatch):
     import inferno_gui.ui.control_tab as ct_mod
     from inferno_gui.ui.control_tab import ControlTab
 
-    monkeypatch.setattr(ct_mod, "QProcess", FakeQProcess)
+    monkeypatch.setattr(ct_mod, "QProcess", qprocess_cls or FakeQProcess)
     monkeypatch.setattr(cfg_mod, "get_statime_binary", lambda: Path("/bin/sh"))
     config_tmp = Path(tempfile.mkdtemp(prefix="inferno-test-config-")) / "statime-v2.toml"
     monkeypatch.setattr(cfg_mod, "get_default_statime_config", lambda v="v2": config_tmp)
@@ -199,6 +202,66 @@ def test_stop_during_starting_window_clears_gate_state(monkeypatch):
     for _ in range(5):
         ct._update_status_panel()
     assert created == [], "no node creation after stop during starting window"
+
+
+class _RecordingStartQProcess(FakeQProcess):
+    """FakeQProcess, der terminate()/kill()-Aufrufe mitzaehlt."""
+
+    terminate_calls = []
+    kill_calls = []
+
+    @classmethod
+    def reset_calls(cls):
+        cls.terminate_calls = []
+        cls.kill_calls = []
+
+    def terminate(self):
+        _RecordingStartQProcess.terminate_calls.append("terminate")
+
+    def kill(self):
+        _RecordingStartQProcess.kill_calls.append("kill")
+
+
+def test_stop_during_starting_window_terminates_process(monkeypatch):
+    """CRITICAL-Regression: Ein User-Stop waehrend des 2,5-s-Startfensters
+    (_ptp_starting, is_ptp_running noch False) muss den statime-Prozess
+    beenden - nicht nur das Gate leeren."""
+    ct, created = _make_tab(monkeypatch, qprocess_cls=_RecordingStartQProcess)
+    _RecordingStartQProcess.reset_calls()
+
+    ct.start_ptp()
+    assert ct._ptp_starting is True
+    assert ct.is_ptp_running is False
+
+    ct.stop_ptp()
+    assert _RecordingStartQProcess.terminate_calls, \
+        "process must be terminated even while only starting"
+    assert ct._ptp_starting is False
+    assert ct._awaiting_lock is False
+    assert "PTP stopped." in ct.terminal_output.toPlainText()
+
+    # Der (gestoppte) Verify-Timer haette nun feuern koennen - es darf
+    # weder "started successfully" geloggt werden noch ein Node-Aufruf
+    # nach 5 lock-wuerdigen Ticks entstehen.
+    ct._verify_ptp_startup()
+    assert ct.is_ptp_running is False
+    assert "started successfully" not in ct.terminal_output.toPlainText()
+    monkeypatch.setattr(
+        ct.parser, "get_sync_status",
+        lambda: {'state': 'SLAVE', 'offset_ns': 500, 'freq_ppb': None},
+    )
+    for _ in range(5):
+        ct._update_status_panel()
+    assert created == [], "no node creation after stop during starting window"
+
+
+def test_stop_stops_startup_verify_timer(monkeypatch):
+    """Der Verify-Timer darf nach stop_ptp nicht mehr aktiv sein."""
+    ct, _created = _make_tab(monkeypatch)
+    ct.start_ptp()
+    assert ct._startup_verify_timer.isActive()
+    ct.stop_ptp()
+    assert not ct._startup_verify_timer.isActive()
 
 
 def test_ptp_exit_before_lock_clears_flag(monkeypatch):

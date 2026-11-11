@@ -516,13 +516,19 @@ class ControlTab(QWidget):
 
     def stop_ptp(self):
         """Stop statime PTP daemon."""
+        # Verify-Timer sofort stoppen: sonst koennte er nach einem User-Stop
+        # im 2,5-s-Startfenster noch "started successfully" loggen.
+        self._startup_verify_timer.stop()
         # Gate-State bedingungslos aufraeumen: waehrend des 2,5-s-Startfensters
         # (_ptp_starting) ist is_ptp_running noch False - ein User-Stop darf
         # trotzdem _awaiting_lock/_lock_gate loeschen, sonst koennte ein
         # spaeteres _verify_ptp_startup doch noch Nodes erzeugen.
         self._awaiting_lock = False
         self._lock_gate = None
-        if self.is_ptp_running and self.ptp_process:
+        # Auch waehrend des Startfensters (_ptp_starting, is_ptp_running noch
+        # False) muss der Prozess terminiert werden - sonst laeuft statime
+        # nach einem User-Stop weiter.
+        if self.ptp_process and (self.is_ptp_running or self._ptp_starting):
             self._append_log("Stopping PTP...")
             self.ptp_process.terminate()
             if not self.ptp_process.waitForFinished(3000):
@@ -583,14 +589,19 @@ class ControlTab(QWidget):
 
             timed_out = not proc.waitForFinished(10000)
             if timed_out:
-                self._append_log(f"Warning: {name} creation timed out")
+                # Prozess sauber beenden statt die lokale Instanz laufend
+                # verfallen zu lassen; NIEMALS Erfolg behaupten.
+                proc.kill()
+                proc.waitForFinished(1000)
+                self._append_log(f"{name} creation FAILED: timed out after 10 s")
+                continue
 
             exit_code = proc.exitCode()
             stderr_text = bytes(proc.readAllStandardError()).decode(
                 'utf-8', errors='replace').strip()
 
             # Fail fast bei non-zero Exit - niemals Erfolg ohne Pruefung loggen.
-            if not timed_out and exit_code != 0:
+            if exit_code != 0:
                 detail = f"exit code {exit_code}"
                 if stderr_text:
                     detail += f"; stderr: {stderr_text}"
@@ -599,7 +610,7 @@ class ControlTab(QWidget):
 
             # Auch bei Exit 0 ist ein "error" im create-stderr ein Scheitern
             # (pw-cli meldet teils Fehler nur auf stderr, nicht per Exit-Code).
-            if not timed_out and 'error' in stderr_text.lower():
+            if 'error' in stderr_text.lower():
                 self._append_log(
                     f"{name} creation FAILED: stderr: {stderr_text}")
                 continue
@@ -609,7 +620,10 @@ class ControlTab(QWidget):
             # KEIN Beweis - genau das hat den urspruenglichen Bug verdeckt.
             try:
                 check = subprocess.run(['pw-cli', 'ls', 'Node'],
-                                       capture_output=True, text=True, timeout=5)
+                                       capture_output=True, text=True, timeout=2)
+            except subprocess.TimeoutExpired:
+                self._append_log(f"{name} creation FAILED: verification timed out")
+                continue
             except (OSError, subprocess.SubprocessError) as e:
                 self._append_log(
                     f"{name} creation FAILED: verification could not run ({e})")

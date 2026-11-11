@@ -7,6 +7,7 @@ und die Liste endete auf '}' - pw-cli bekam damit kein object.linger.
 Run: QT_QPA_PLATFORM=offscreen /tmp/opencode/inferno-dev/bin/pytest tests/test_node_args.py -q
 """
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -50,6 +51,12 @@ class _RecordingQProcess:
 
     def start(self, program, args=None):
         _RecordingQProcess.commands.append([program] + list(args or []))
+
+    def terminate(self):
+        pass
+
+    def kill(self):
+        pass
 
     def waitForFinished(self, timeout=None):
         if _RecordingQProcess.pending_timeouts:
@@ -117,12 +124,14 @@ def _get_app():
 
 
 def _run_create(monkeypatch, ls_stdout=_LS_BOTH, exit_codes=None, stderrs=None,
-                timeouts=None):
+                timeouts=None, run_exc=None):
     """_create_pipewire_nodes ausfuehren und (gesendete Befehle, Log-Text) zurueckgeben.
 
     QProcess und subprocess.run (`pw-cli ls Node`) sind gemockt: keine echten
     pw-cli-Aufrufe. `ls_stdout` ist der Fake-Output der Verifikation,
-    `exit_codes`/`stderrs`/`timeouts` konfigurieren die create-Aufrufe der Reihe nach.
+    `exit_codes`/`stderrs`/`timeouts` konfigurieren die create-Aufrufe der
+    Reihe nach. `run_exc` laesst die Verifikation mit dieser Exception
+    scheitern (OSError, TimeoutExpired, ...).
     """
     _get_app()
 
@@ -135,8 +144,13 @@ def _run_create(monkeypatch, ls_stdout=_LS_BOTH, exit_codes=None, stderrs=None,
     _RecordingQProcess.pending_stderrs = list(stderrs or [])
     _RecordingQProcess.pending_timeouts = list(timeouts or [])
 
-    monkeypatch.setattr(ct_mod.subprocess, "run",
-                        lambda args, **kw: _FakeResult(stdout=ls_stdout))
+    if run_exc is not None:
+        def _raise_run(args, **kw):
+            raise run_exc
+        monkeypatch.setattr(ct_mod.subprocess, "run", _raise_run)
+    else:
+        monkeypatch.setattr(ct_mod.subprocess, "run",
+                            lambda args, **kw: _FakeResult(stdout=ls_stdout))
     monkeypatch.setattr(cfg_mod, "get_statime_binary", lambda: Path("/bin/sh"))
     config_tmp = Path(tempfile.mkdtemp(prefix="inferno-test-config-")) / "statime-v2.toml"
     monkeypatch.setattr(cfg_mod, "get_default_statime_config", lambda v="v2": config_tmp)
@@ -207,3 +221,45 @@ def test_stderr_error_logs_failure_even_on_exit_zero(monkeypatch):
     assert "Inferno sink creation FAILED" in log
     assert "error: node creation rejected" in log
     assert "Inferno sink created successfully" not in log
+
+
+def test_waitforfinished_timeout_logs_failure_not_success(monkeypatch):
+    """IMPORTANT-Regression: waitForFinished-Timeout (False) darf nicht in die
+    Verifikation fallen und niemals "created successfully" behaupten."""
+    _cmds, log = _run_create(monkeypatch, timeouts=[False])
+    assert "Inferno sink creation FAILED: timed out after 10 s" in log
+    assert "Inferno sink created successfully" not in log
+    assert "Warning: Inferno sink creation timed out" not in log
+    assert log.count("creation FAILED") == 1
+    # Der zweite Aufruf (source) laeuft normal und wird verifiziert.
+    assert "Inferno source created successfully (verified)" in log
+
+
+def test_subprocess_oserror_logs_failure(monkeypatch):
+    """Verifikation wirft OSError (z. B. pw-cli nicht gefunden) -> FAILED-Log,
+    kein Crash, kein Erfolgs-Claim."""
+    _cmds, log = _run_create(
+        monkeypatch, run_exc=OSError("pw-cli not found"))
+    assert log.count("creation FAILED") == 2
+    assert "pw-cli not found" in log
+    assert "created successfully" not in log
+
+
+def test_verification_timeout_logs_failure(monkeypatch):
+    """Verifikation-Timeout (subprocess.TimeoutExpired) -> FAILED-Log
+    "verification timed out", kein Crash, kein Erfolgs-Claim."""
+    _cmds, log = _run_create(
+        monkeypatch, run_exc=subprocess.TimeoutExpired("pw-cli", 2))
+    assert log.count("creation FAILED") == 2
+    assert "verification timed out" in log
+    assert "created successfully" not in log
+
+
+def test_ls_error_output_logs_failure(monkeypatch):
+    """`pw-cli ls Node`-Output enthaelt "error" -> FAILED-Log, kein
+    "created successfully"."""
+    ls_with_error = _LS_BOTH + "\nsome error while listing nodes\n"
+    _cmds, log = _run_create(monkeypatch, ls_stdout=ls_with_error)
+    assert log.count("creation FAILED") == 2
+    assert "reported an error" in log
+    assert "created successfully" not in log
