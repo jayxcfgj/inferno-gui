@@ -597,6 +597,13 @@ class ControlTab(QWidget):
                 self._append_log(f"{name} creation FAILED: {detail}")
                 continue
 
+            # Auch bei Exit 0 ist ein "error" im create-stderr ein Scheitern
+            # (pw-cli meldet teils Fehler nur auf stderr, nicht per Exit-Code).
+            if not timed_out and 'error' in stderr_text.lower():
+                self._append_log(
+                    f"{name} creation FAILED: stderr: {stderr_text}")
+                continue
+
             # Ehrliche Verifikation: die Node muss jetzt wirklich existieren.
             # Ein pw-cli-Aufruf, der nur von waitForFinished zurueckkehrt, ist
             # KEIN Beweis - genau das hat den urspruenglichen Bug verdeckt.

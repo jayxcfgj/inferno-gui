@@ -197,3 +197,13 @@ def test_nonzero_exit_logs_failure(monkeypatch):
     assert "failed to create node: connection refused" in log
     # Der zweite Aufruf laeuft normal weiter und wird verifiziert.
     assert "Inferno source created successfully (verified)" in log
+
+
+def test_stderr_error_logs_failure_even_on_exit_zero(monkeypatch):
+    # create-Aufruf exit 0, aber create-stderr enthaelt "error"
+    # -> Log enthaelt "creation FAILED" und NICHT "created successfully"
+    stderr = b"remote 0: error: node creation rejected"
+    _cmds, log = _run_create(monkeypatch, ls_stdout=_LS_BOTH, stderrs=[stderr])
+    assert "Inferno sink creation FAILED" in log
+    assert "error: node creation rejected" in log
+    assert "Inferno sink created successfully" not in log
