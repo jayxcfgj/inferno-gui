@@ -574,18 +574,57 @@ class ControlTab(QWidget):
             'api.alsa.pcm.card=999'
         ]
         
-        for name, cmd in [("Inferno sink", sink_cmd), ("Inferno source", source_cmd)]:
+        import re
+
+        for name, node_name, cmd in [("Inferno sink", "Inferno_sink", sink_cmd),
+                                     ("Inferno source", "Inferno_source", source_cmd)]:
             proc = QProcess()
             proc.start(cmd[0], cmd[1:])  # Start without bash -c
-            
-            if not proc.waitForFinished(10000):
+
+            timed_out = not proc.waitForFinished(10000)
+            if timed_out:
                 self._append_log(f"Warning: {name} creation timed out")
+
+            exit_code = proc.exitCode()
+            stderr_text = bytes(proc.readAllStandardError()).decode(
+                'utf-8', errors='replace').strip()
+
+            # Fail fast bei non-zero Exit - niemals Erfolg ohne Pruefung loggen.
+            if not timed_out and exit_code != 0:
+                detail = f"exit code {exit_code}"
+                if stderr_text:
+                    detail += f"; stderr: {stderr_text}"
+                self._append_log(f"{name} creation FAILED: {detail}")
+                continue
+
+            # Ehrliche Verifikation: die Node muss jetzt wirklich existieren.
+            # Ein pw-cli-Aufruf, der nur von waitForFinished zurueckkehrt, ist
+            # KEIN Beweis - genau das hat den urspruenglichen Bug verdeckt.
+            try:
+                check = subprocess.run(['pw-cli', 'ls', 'Node'],
+                                       capture_output=True, text=True, timeout=5)
+            except (OSError, subprocess.SubprocessError) as e:
+                self._append_log(
+                    f"{name} creation FAILED: verification could not run ({e})")
+                continue
+
+            node_present = re.search(
+                rf'node\.name\s*=\s*"{re.escape(node_name)}"', check.stdout)
+            combined = (check.stdout + check.stderr).lower()
+            if 'error' in combined:
+                self._append_log(
+                    f"{name} creation FAILED: pw-cli reported an error "
+                    "while listing nodes")
+            elif not node_present:
+                self._append_log(
+                    f'{name} creation FAILED: node "{node_name}" not found '
+                    "in PipeWire after creation")
             else:
-                output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace').strip()
+                output = bytes(proc.readAllStandardOutput()).decode(
+                    'utf-8', errors='replace').strip()
                 if output:
                     self._append_log(f"{name} created: {output}")
-                else:
-                    self._append_log(f"{name} created successfully")
+                self._append_log(f"{name} created successfully (verified)")
 
     def _destroy_pipewire_nodes(self):
         """Destroy PipeWire nodes for Inferno sink and source."""
