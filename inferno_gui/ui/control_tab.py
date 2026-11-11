@@ -18,6 +18,7 @@ from inferno_gui.core.config import (
     get_default_statime_config,
     get_work_dir,
 )
+from inferno_gui.core.lock_gate import LockGate
 from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_log_entry
 
 
@@ -57,6 +58,9 @@ class ControlTab(QWidget):
         self._ptp_freq = None
         self._interface_ips = {}
         self._settings_dirty = False
+        self._lock_gate: LockGate | None = None
+        self._awaiting_lock = False
+        self._lock_wait_ticks = 0
         
         self.parser = StatimeLogParser(filter_interval=1.0)
         self._stdout_buffer = ''
@@ -466,8 +470,13 @@ class ControlTab(QWidget):
         
         self.ptp_process.start("bash", ["-c", cmd])
         
-        # Create PipeWire nodes for Inferno
-        self._create_pipewire_nodes()
+        # Gate: PipeWire nodes only after a stable PTP lock
+        # (v2: 1000 ns, v1: 1500 ns; 5 consecutive stable ticks, no timeout)
+        threshold = 1500 if self.ptp_v1_radio.isChecked() else 1000
+        self._lock_gate = LockGate(threshold, 5)
+        self._awaiting_lock = True
+        self._lock_wait_ticks = 0
+        self._append_log(f"Waiting for PTP lock before creating PipeWire nodes... (threshold {threshold} ns)")
         
         # Set starting state - will be confirmed by _verify_ptp_startup after 2.5s
         self._ptp_starting = True
@@ -642,6 +651,9 @@ class ControlTab(QWidget):
     def _reset_ptp_state(self):
         self.is_ptp_running = False
         self._ptp_starting = False
+        self._lock_gate = None
+        self._awaiting_lock = False
+        self._lock_wait_ticks = 0
         self.ptp_process = None
         self.start_ptp_btn.setEnabled(True)
         self.stop_ptp_btn.setEnabled(False)
@@ -662,15 +674,20 @@ class ControlTab(QWidget):
 
     def _ptp_finished(self, exit_code, exit_status):
         was_running = self.is_ptp_running
+        missed_lock = self._awaiting_lock
         self._reset_ptp_state()
         if was_running:
             if exit_code == 0:
                 self._append_log("PTP process completed successfully.")
             else:
                 self._append_log(f"PTP process exited with code: {exit_code}")
+            if missed_lock:
+                self._append_log("PTP exited before lock - no PipeWire nodes created")
             self.ptp_stopped.emit()
         else:
             # Process failed during startup - _verify_ptp_startup already logged error
+            if missed_lock:
+                self._append_log("PTP exited before lock - no PipeWire nodes created")
             if exit_code != 0:
                 self._append_log(f"PTP process exited during startup with code: {exit_code}")
 
@@ -734,6 +751,24 @@ class ControlTab(QWidget):
     def _update_status_panel(self):
         """Update status indicators from parser."""
         status = self.parser.get_sync_status()
+
+        # Lock-Gate: PipeWire nodes only after 5 consecutive stable ticks
+        # in the target state (display logic below stays separate).
+        if self._awaiting_lock and self.is_ptp_running and self._lock_gate is not None:
+            if self._lock_gate.feed(status['state'], status['offset_ns']):
+                self._awaiting_lock = False
+                self._append_log(
+                    f"PTP locked (offset {status['offset_ns']} ns, 5/5 ticks) - creating PipeWire nodes..."
+                )
+                self._create_pipewire_nodes()
+            else:
+                self._lock_wait_ticks += 1
+                if self._lock_wait_ticks >= 20:
+                    self._append_log(
+                        f"still waiting for lock: state={status['state']}, offset={status['offset_ns']} ns"
+                    )
+                    self._lock_wait_ticks = 0
+
         self._ptp_state = status['state']
         self._ptp_offset = status['offset_ns']
         self._ptp_freq = status['freq_ppb']
