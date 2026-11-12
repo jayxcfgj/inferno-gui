@@ -5,14 +5,15 @@ Datum: 2026-11-12 · Status: zur Freigabe
 ## Intent
 
 Das Taskleisten-Fenster-Icon und das Tray-Icon sollen den PTP-Sync-Zustand
-live zeigen: **grün, sobald „Locked" erreicht ist, sonst rot**. Aktuell gibt
+live zeigen: **grün, sobald „Locked" erreicht ist, sonst schwarz/weiß**. Aktuell gibt
 es nur ein statisches, einmal beim Start geladenes Icon – der Wechsel wurde
 nie implementiert.
 
 ## Goals
 
 - Icon wechselt **grün ab „Locked"** – dieselbe Schwelle wie das
-  Display-Label: `state == 'SLAVE' and offset_ns is not None and offset_ns <= 200`.
+  Display-Label: `ptp_state == 'SLAVE' and ptp_offset is not None and ptp_offset <= 200`
+  (Signal-Payload-Keys von `status_changed`).
 - **Beide Icons** wechseln: Fenster-/Taskleisten-Icon UND Tray-Icon.
 - Sonst (PTP gestoppt, kein Sync, Fehler, Offset > 200 ns): **schwarz/weiß**
   (`icon.png`, der bisherige Status-quo) – **kein** rotes Icon.
@@ -20,7 +21,7 @@ nie implementiert.
 
 ## Non-Goals / Anti-Goals
 
-- Keine gelbe/„Syncing"-Zwischenstufe für Icons (nur rot/grün).
+- Keine gelbe/„Syncing"-Zwischenstufe für Icons (nur schwarz/weiß oder grün).
 - Kein Wechsel der Anzeige-Logik im Control-Tab (Ampel/Label bleiben unberührt).
 - Keine neuen Abhängigkeiten.
 
@@ -31,7 +32,7 @@ nie implementiert.
   bereits), `icon.png` (schwarz/weiß, bleibt Start-/Fallback-Icon).
 - Statusquelle: bereits vorhandenes Signal
   `ControlTab.status_changed(dict)` (gefeuert in `_emit_status()`),
-  Payload enthält u. a. `state` und `offset_ns`.
+  Payload enthält u. a. `ptp_state` und `ptp_offset`.
 - Installierte Kopie `/home/jacob/audio-inferno/gui/` muss nach jedem Fix per
   `diff -rq --exclude=__pycache__ --exclude=*.toml` synchron gehalten werden.
 
@@ -63,10 +64,10 @@ B und C verworfen zugunsten von A (zwei fertige Icons vorhanden).
 2. **MainWindow:** Einzeiler
    `self.control_tab.status_changed.connect(self._on_sync_status)`.
    Cache: `self._icon_locked` / `self._icon_not_sync` (einmalig laden),
-   Merker `self._sync_icons_locked: bool | None = None`.
+   Merker `self._sync_icons_locked: bool = False`.
 3. **Handler** `_on_sync_status(status: dict)`: berechne
-   `green = status.get('state') == 'SLAVE' and status.get('offset_ns') is not None
-   and status.get('offset_ns') <= 200` (identisch zur „Locked"-Logik);
+   `green = status.get('ptp_state') == 'SLAVE' and status.get('ptp_offset') is not None
+   and status.get('ptp_offset') <= 200` (identisch zur „Locked"-Logik);
    nur wenn `green != self._sync_icons_locked`: Merker aktualisieren,
    `QApplication.instance().setWindowIcon(...)`,
    `self.tray_icon.setIcon(...)`.
@@ -78,7 +79,7 @@ B und C verworfen zugunsten von A (zwei fertige Icons vorhanden).
 - Exakte SVG-Erstellung (aus `icon.svg` ableiten, Verlaufsfarben wie oben).
 - TDD-Test: Signal-Payload → Icon-Wechsel (Mock/QIcon-Vergleich via
   `cacheKey()`), plus Grenzwert-Test (200 ns grün, 201 ns schwarz/weiß,
-  `offset_ns=None` schwarz/weiß, `state != 'SLAVE'` schwarz/weiß),
+  `offset=None` schwarz/weiß, `state != 'SLAVE'` schwarz/weiß),
   QSettings auf Temp, keine echten Prozesse.
 - Verifikation: `QT_QPA_PLATFORM=offscreen /tmp/opencode/inferno-dev/bin/pytest
   tests/ -q`, ruff-Parität (Basis ≤ 277), Sync der installierten Kopie.
