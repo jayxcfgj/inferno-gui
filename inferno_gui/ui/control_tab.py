@@ -23,6 +23,7 @@ from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_lo
 
 
 _MAX_TERMINAL_LINES = 3000
+_MAX_RESIDUE = 8192
 
 
 def _trim_terminal(edit, max_lines=_MAX_TERMINAL_LINES):
@@ -803,12 +804,22 @@ class ControlTab(QWidget):
             self._write_timer.start()
 
     def _flush_terminal(self):
-        if self._stdout_buffer:
-            self._process_log_output(self._stdout_buffer)
-            self._stdout_buffer = ''
-        if self._stderr_buffer:
-            self._process_log_output(self._stderr_buffer)
-            self._stderr_buffer = ''
+        for attr in ('_stdout_buffer', '_stderr_buffer'):
+            buffer = getattr(self, attr)
+            if not buffer:
+                continue
+            # Nur komplette Zeilen (bis einschliesslich letztem '\n') an den
+            # Parser geben; ein unvollstaendiger Rest bleibt im Puffer und
+            # wird erst beim naechsten Flush (oder forciert ab 8192 Zeichen)
+            # verarbeitet - sonst zerstoeren 50-ms-Chunk-Grenzen die Werte.
+            end = buffer.rfind('\n')
+            if end == -1:
+                if len(buffer) > _MAX_RESIDUE:
+                    self._process_log_output(buffer)
+                    setattr(self, attr, '')
+                continue
+            self._process_log_output(buffer[:end + 1])
+            setattr(self, attr, buffer[end + 1:])
         self._write_timer.stop()
 
     def _process_log_output(self, text: str):
