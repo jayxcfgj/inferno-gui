@@ -32,7 +32,15 @@ class MainWindow(QMainWindow):
         
         # State
         self._inferno_running = False
-        
+
+        # Sync-Status-Icons: einmalig cachen (schwarz/weiß = nicht sync,
+        # grün = Locked); Merker fuer den Zustandswechsel-Swap, Start False.
+        self._icon_not_sync = QIcon(
+            str(Path(__file__).parent.parent / 'assets' / 'icon.png'))
+        self._icon_locked = QIcon(
+            str(Path(__file__).parent.parent / 'assets' / 'icon.svg'))
+        self._sync_icons_locked = False
+
         # Setup UI
         self._setup_tabs()
         self._setup_tray()
@@ -89,7 +97,7 @@ class MainWindow(QMainWindow):
         # Try to load icon
         icon_path = Path(__file__).parent.parent / 'assets' / 'icon.png'
         if icon_path.exists():
-            self.tray_icon.setIcon(QIcon(str(icon_path)))
+            self.tray_icon.setIcon(self._icon_not_sync)
         else:
             # Create a simple colored icon
             pixmap = QPixmap(32, 32)
@@ -190,6 +198,7 @@ class MainWindow(QMainWindow):
         self.control_tab.ptp_stopped.connect(self._on_ptp_stopped)
         self.control_tab.inferno_started.connect(self._on_inferno_started)
         self.control_tab.inferno_stopped.connect(self._on_inferno_stopped)
+        self.control_tab.status_changed.connect(self._on_sync_status)
         
         # Settings tab signals
         self.settings_tab.interface_changed.connect(self.control_tab.set_interface)
@@ -303,3 +312,17 @@ class MainWindow(QMainWindow):
         # Refresh interfaces when window shown
         self.control_tab._refresh_interfaces()
         self.settings_tab._refresh_interfaces()
+
+    def _on_sync_status(self, status: dict):
+        """Icons (Fenster + Tray) dem Sync-Zustand anpassen: grün ab Locked."""
+        green = (status.get('ptp_state') == 'SLAVE'
+                 and status.get('ptp_offset') is not None
+                 and status.get('ptp_offset') <= 200)
+        if green == self._sync_icons_locked:
+            return
+        self._sync_icons_locked = green
+        icon = self._icon_locked if green else self._icon_not_sync
+        app = QApplication.instance()
+        if app is not None:
+            app.setWindowIcon(icon)
+        self.tray_icon.setIcon(icon)
