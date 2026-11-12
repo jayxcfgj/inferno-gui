@@ -62,3 +62,16 @@ def test_forced_flush_over_8kb_without_newline(monkeypatch):
     ct._stdout_buffer = "x" * 9000              # nie `\n` → trotzdem leeren
     ct._flush_terminal()
     assert ct._stdout_buffer == ""
+
+
+def test_reset_ptp_state_clears_buffer_residue(monkeypatch):
+    from test_lock_gate_wiring import _make_tab
+
+    ct, _ = _make_tab(monkeypatch)
+    ct._stdout_buffer = "2026-11-12T00:00:00.000000Z ERROR a: partial"
+    ct._stderr_buffer = "stderr frag"
+    ct._reset_ptp_state()
+    # Residuum beim Prozessende/Neustart verwerfen, nicht in den
+    # naechsten Lauf schleppen (wuerde dessen erste Zeile korruptieren).
+    assert ct._stdout_buffer == ""
+    assert ct._stderr_buffer == ""

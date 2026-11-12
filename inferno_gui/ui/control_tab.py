@@ -749,6 +749,11 @@ class ControlTab(QWidget):
         self._awaiting_lock = False
         self._lock_wait_ticks = 0
         self.ptp_process = None
+        # Unvollstaendige Zeilen-Reste verwerfen - ein halbes Fragment
+        # am Laufende ist nicht informativ und wuerde die erste Zeile
+        # des naechsten Laufs korruptieren.
+        self._stdout_buffer = ''
+        self._stderr_buffer = ''
         self.start_ptp_btn.setEnabled(True)
         self.stop_ptp_btn.setEnabled(False)
         self.interface_combo.setEnabled(True)
