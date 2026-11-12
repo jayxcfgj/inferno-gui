@@ -540,9 +540,10 @@ class ControlTab(QWidget):
         
         # Destroy PipeWire nodes for Inferno
         self._destroy_pipewire_nodes()
-        
+
+        # Kein _emit_status() hier: _ptp_finished emittiert bereits synchron
+        # beim process-finished in waitForFinished - doppelter Emit vermeiden.
         self.ptp_stopped.emit()
-        self._emit_status()
 
     def _create_pipewire_nodes(self):
         """Create PipeWire nodes for Inferno sink and source."""
@@ -768,6 +769,10 @@ class ControlTab(QWidget):
         was_running = self.is_ptp_running
         missed_lock = self._awaiting_lock
         self._reset_ptp_state()
+        # Status emittieren: auch bei Prozess-Tod von selbst muss das Icon
+        # im MainWindow zurueck auf schwarz/weiß wechseln (Merker macht den
+        # Emit ohne Lock-Wechsel harmlos).
+        self._emit_status()
         if was_running:
             if exit_code == 0:
                 self._append_log("PTP process completed successfully.")
