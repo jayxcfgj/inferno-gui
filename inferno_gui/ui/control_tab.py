@@ -890,9 +890,9 @@ class ControlTab(QWidget):
         state = status['state']
         offset = status['offset_ns']
         if state == 'SLAVE' and offset is not None:
-            if offset <= 200:
+            if abs(offset) <= 200:
                 display_state = "Locked"
-            elif offset <= 1000:
+            elif abs(offset) <= 1000:
                 display_state = "Syncing..."
             else:
                 display_state = "SLAVE"
@@ -938,17 +938,17 @@ class ControlTab(QWidget):
             label = "Uncalibrated"
             tip = "Uncalibrated – acquiring sync"
         elif state == 'SLAVE' and offset is not None:
-            if offset <= 200:
+            if abs(offset) <= 200:
                 color = "#4caf50"
-                label = f"Locked ({offset} ns)"
+                label = f"Locked ({abs(offset)} ns)"
                 tip = f"Sync: {offset}ns (excellent)"
-            elif offset <= 1000:
+            elif abs(offset) <= 1000:
                 color = "#ffc107"
-                label = f"Syncing... ({offset} ns)"
+                label = f"Syncing... ({abs(offset)} ns)"
                 tip = f"Sync: {offset}ns (good)"
             else:
                 color = "#f44336"
-                label = f"SLAVE ({offset} ns)"
+                label = f"SLAVE ({abs(offset)} ns)"
                 tip = f"Sync: {offset}ns (poor)"
         else:
             color = "gray"

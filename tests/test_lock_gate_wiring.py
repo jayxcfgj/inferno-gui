@@ -273,3 +273,21 @@ def test_ptp_exit_before_lock_clears_flag(monkeypatch):
     assert created == []
     assert ("PTP exited before lock - no PipeWire nodes created"
             ) in ct.terminal_output.toPlainText()
+
+
+def test_sync_light_bucket_uses_magnitude(monkeypatch):
+    ct, _ = _make_tab(monkeypatch)
+    monkeypatch.setattr(ct.parser, "get_sync_status",
+                        lambda: {'state': 'SLAVE', 'offset_ns': -5000, 'freq_ppb': None})
+    ct._update_status_panel()
+    assert ct.sync_label.text() == "SLAVE (5000 ns)"          # Magnitude im Bucket
+    assert ct.ptp_offset_label.text() == "Offset: -5000 ns"    # Vorzeichen im Label
+    assert ct.ptp_state_label.text() == "State: SLAVE"         # nicht "Locked"
+
+def test_sync_light_locked_bucket_with_small_negative_offset(monkeypatch):
+    ct, _ = _make_tab(monkeypatch)
+    monkeypatch.setattr(ct.parser, "get_sync_status",
+                        lambda: {'state': 'SLAVE', 'offset_ns': -150, 'freq_ppb': None})
+    ct._update_status_panel()
+    assert ct.sync_label.text() == "Locked (150 ns)"
+    assert ct.ptp_state_label.text() == "State: Locked"

@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
         """Icons (Fenster + Tray) dem Sync-Zustand anpassen: grün ab Locked."""
         green = (status.get('ptp_state') == 'SLAVE'
                  and status.get('ptp_offset') is not None
-                 and status.get('ptp_offset') <= 200)
+                 and abs(status.get('ptp_offset')) <= 200)
         if green == self._sync_icons_locked:
             return
         self._sync_icons_locked = green

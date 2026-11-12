@@ -3,7 +3,7 @@
 schwarz/weiß (nicht sync) und grün (Locked).
 
 Locked exakt: ptp_state == 'SLAVE' and ptp_offset is not None
-              and ptp_offset <= 200 - sonst schwarz/weiß.
+              and abs(ptp_offset) <= 200 - sonst schwarz/weiß.
 Swap nur bei Zustandswechsel (Merker _sync_icons_locked, Start False).
 
 Run: QT_QPA_PLATFORM=offscreen /tmp/opencode/inferno-dev/bin/pytest tests/test_sync_icons.py -v
@@ -161,6 +161,39 @@ def test_icon_not_green_without_full_lock_condition(qt_offscreen, monkeypatch):
         mw._on_sync_status(payload)
         assert mw._sync_icons_locked is False, f"must stay not-locked: {payload}"
     assert calls == [], "no lock condition must not swap icons"
+    mw.hide()
+
+
+def test_icon_not_green_for_large_negative_offset(qt_offscreen, monkeypatch):
+    from inferno_gui.ui.main_window import MainWindow
+
+    mw = MainWindow()
+    calls = []
+    monkeypatch.setattr(QApplication.instance(), "setWindowIcon",
+                        lambda icon: calls.append(("window", icon.cacheKey())))
+    monkeypatch.setattr(mw.tray_icon, "setIcon",
+                        lambda icon: calls.append(("tray", icon.cacheKey())))
+    mw._on_sync_status({'ptp_running': True, 'ptp_state': 'SLAVE',
+                        'ptp_offset': -500, 'ptp_freq': 0})
+    # alt: -500 <= 200 → True → fälschlich grün
+    assert mw._sync_icons_locked is False
+    assert calls == []
+    mw.hide()
+
+
+def test_icon_green_for_small_negative_offset(qt_offscreen, monkeypatch):
+    from inferno_gui.ui.main_window import MainWindow
+
+    mw = MainWindow()
+    calls = []
+    monkeypatch.setattr(QApplication.instance(), "setWindowIcon",
+                        lambda icon: calls.append(("window", icon.cacheKey())))
+    monkeypatch.setattr(mw.tray_icon, "setIcon",
+                        lambda icon: calls.append(("tray", icon.cacheKey())))
+    mw._on_sync_status({'ptp_running': True, 'ptp_state': 'SLAVE',
+                        'ptp_offset': -150, 'ptp_freq': 0})
+    assert mw._sync_icons_locked is True      # abs(-150) <= 200
+    assert len(calls) == 2
     mw.hide()
 
 

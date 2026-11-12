@@ -10,7 +10,8 @@ class LockGate:
     """Zaehlt aufeinanderfolgende PTP-Ticks im Zielzustand und signalisiert Lock.
 
     Ein Treffer ist ein Tick mit ``state == 'SLAVE'`` und einer Offset-Messung
-    ``offset_ns <= threshold_ns``. Jeder Nicht-Treffer setzt den Zaehler auf 0.
+    ``abs(offset_ns) <= threshold_ns`` (Vorzeichen spielt keine Rolle - nur
+    die Magnitude zaehlt). Jeder Nicht-Treffer setzt den Zaehler auf 0.
     Sobald ``required_ticks`` Treffer in Folge erreicht sind, liefert ``feed``
     True (sticky bis ``reset()``).
     """
@@ -28,7 +29,7 @@ class LockGate:
 
     def feed(self, state: str | None, offset_ns: int | None) -> bool:
         """Einen PTP-Tick einspeisen. True, sobald der Lock erreicht ist (sticky)."""
-        hit = state == 'SLAVE' and offset_ns is not None and offset_ns <= self.threshold_ns
+        hit = state == 'SLAVE' and offset_ns is not None and abs(offset_ns) <= self.threshold_ns
         if hit:
             self._count += 1
         else:

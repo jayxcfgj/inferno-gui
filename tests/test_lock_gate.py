@@ -39,6 +39,17 @@ def test_threshold_is_inclusive():
     g = LockGate(1000, 1)
     assert g.feed('SLAVE', 1000) is True
 
+def test_negative_offset_counts_as_hit():
+    g = LockGate(threshold_ns=200, required_ticks=2)
+    assert g.feed('SLAVE', -50) is False
+    assert g.feed('SLAVE', -50) is True      # abs(-50) <= 200 zählt
+
+def test_large_negative_offset_does_not_lock():
+    g = LockGate(threshold_ns=200, required_ticks=2)
+    g.feed('SLAVE', -5000)
+    assert g.stable_count == 0
+    assert g.feed('SLAVE', -5000) is False   # alt: -5000 <= 200 → True (falsch)
+
 def test_reset_clears_state():
     g = LockGate(1000, 5)
     for _ in range(5):
