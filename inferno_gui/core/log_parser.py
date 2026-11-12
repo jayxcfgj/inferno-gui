@@ -35,37 +35,17 @@ STATIME_PATTERNS = [
     # Offset/frequency patterns (common in PTP logs)
     {
         'key': 'offset',
-        'pattern': re.compile(r'offset\s*[=:]\s*(-?\d+\.?\d*)\s*ns?'),
-        'severity': LogSeverity.INFO,
-    },
-    {
-        'key': 'offset',
-        'pattern': re.compile(r'Estimated\s+offset\s+(-?\d+\.?\d*)\s*ns'),
-        'severity': LogSeverity.INFO,
-    },
-    {
-        'key': 'rms_offset',
-        'pattern': re.compile(r'rms\s+(-?\d+)'),
+        'pattern': re.compile(r'Estimated offset (-?[\d.]+)ns\+-'),
         'severity': LogSeverity.INFO,
     },
     {
         'key': 'freq_ppb',
-        'pattern': re.compile(r'freq\s*[=:]\s*(-?\d+\.?\d*)\s*ppb?'),
-        'severity': LogSeverity.INFO,
-    },
-    {
-        'key': 'freq_ppb',
-        'pattern': re.compile(r'freq\s+(-?\d+\.?\d*)'),
+        'pattern': re.compile(r'freq (-?[\d.]+)\+-'),
         'severity': LogSeverity.INFO,
     },
     {
         'key': 'path_delay',
-        'pattern': re.compile(r'path_delay\s+(\d+)'),
-        'severity': LogSeverity.INFO,
-    },
-    {
-        'key': 'delay',
-        'pattern': re.compile(r'delay\s+(-?\d+\.?\d*)'),
+        'pattern': re.compile(r'delay (-?[\d.]+)\+-'),
         'severity': LogSeverity.INFO,
     },
     # Real statime state transitions, e.g. "new state for port 0: Listening -> Slave"
@@ -136,19 +116,19 @@ class StatimeLogParser:
             match = pat_info['pattern'].search(line)
             if match:
                 # Update metrics
-                if pat_info['key'] in ('offset', 'rms_offset'):
+                if pat_info['key'] == 'offset':
                     try:
-                        entry.offset_ns = abs(int(float(match.group(1))))
+                        entry.offset_ns = round(float(match.group(1)))
                     except (ValueError, IndexError):
                         pass
                 elif pat_info['key'] == 'freq_ppb':
                     try:
-                        entry.freq_ppb = round(float(match.group(1)))
+                        entry.freq_ppb = round(float(match.group(1)) * 1000)
                     except (ValueError, IndexError):
                         pass
-                elif pat_info['key'] in ('path_delay', 'delay'):
+                elif pat_info['key'] == 'path_delay':
                     try:
-                        entry.path_delay_ns = int(float(match.group(1)))
+                        entry.path_delay_ns = round(float(match.group(1)))
                     except (ValueError, IndexError):
                         pass
                 elif pat_info['key'] == 'state':
@@ -202,6 +182,8 @@ class StatimeLogParser:
         
         if base_entry.path_delay_ns is not None:
             parts.append(f"path_delay={base_entry.path_delay_ns}ns")
+        elif self._pending_metrics.get('path_delay_ns') is not None:
+            parts.append(f"path_delay={self._pending_metrics['path_delay_ns']}ns")
         
         if not parts:
             parts.append("running")
@@ -213,10 +195,10 @@ class StatimeLogParser:
             timestamp=base_entry.timestamp,
             message=message,
             raw=base_entry.raw,
-            offset_ns=base_entry.offset_ns or self._pending_metrics.get('offset_ns'),
-            freq_ppb=base_entry.freq_ppb or self._pending_metrics.get('freq_ppb'),
+            offset_ns=base_entry.offset_ns if base_entry.offset_ns is not None else self._pending_metrics.get('offset_ns'),
+            freq_ppb=base_entry.freq_ppb if base_entry.freq_ppb is not None else self._pending_metrics.get('freq_ppb'),
             state=self._last_state,
-            path_delay_ns=base_entry.path_delay_ns or self._pending_metrics.get('path_delay_ns'),
+            path_delay_ns=base_entry.path_delay_ns if base_entry.path_delay_ns is not None else self._pending_metrics.get('path_delay_ns'),
         )
     
     def _extract_timestamp(self, line: str) -> str:

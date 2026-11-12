@@ -53,3 +53,35 @@ def test_message_text_error_word_is_not_error():
     e = p.parse_line("2026-11-12T14:33:21.123456Z TRACE statime::socket: could not parse packet: ParseError detail")
     assert e.severity == LogSeverity.INFO
     assert p._counters['errors'] == 0
+
+
+def test_estimated_line_metrics_signed_and_converted():
+    p = StatimeLogParser()
+    e = p.parse_line(EST)
+    assert e.offset_ns == -123        # signiert + gerundet (alt: 123 via abs/int)
+    assert e.freq_ppb == 1234         # 1.234 ppm → 1234 ppb (alt: 1)
+    assert e.path_delay_ns == 4568    # round(4567.8) (alt: 4567)
+
+
+def test_sub_ppm_frequency():
+    p = StatimeLogParser()
+    e = p.parse_line(EST.replace("freq 1.234", "freq 0.4"))
+    assert e.freq_ppb == 400          # 0.4 ppm → 400 ppb (alt: 0)
+
+
+def test_summary_message_includes_all_pending_metrics():
+    p = StatimeLogParser(filter_interval=0.0)
+    p.parse_line(EST)                 # Pending füllen
+    e = p.parse_line("2026-11-12T14:33:25.123456Z  INFO statime::port: plain info line")
+    assert e is not None
+    assert "offset=-123ns" in e.message
+    assert "freq=1234ppb" in e.message
+    assert "path_delay=4568ns" in e.message   # alt: kein Pending-Fallback → fehlt
+
+
+def test_summary_entry_keeps_zero_offset():
+    p = StatimeLogParser(filter_interval=0.0)
+    p.parse_line(EST)                                  # Pending -123
+    zero = EST.replace("offset -123.45", "offset 0")
+    e = p.parse_line(zero)
+    assert e.offset_ns == 0                            # alt: `0 or pending` → -123
