@@ -42,6 +42,21 @@ def test_raw_mode_does_not_truncate_long_lines(monkeypatch):
     assert long_line in ct.terminal_output.toPlainText()   # alle 400 x
 
 
+def test_filtered_mode_shows_summary_line(monkeypatch):
+    """Positiv-Test: Im Default-Modus (Filtered an) wird eine Summary
+    tatsächlich angezeigt - nicht nur Rohzeilen unterdrückt."""
+    from test_lock_gate_wiring import _make_tab
+    from test_log_parser import EST
+
+    ct, _ = _make_tab(monkeypatch)
+    ct._process_log_output(EST + "\n")
+    text = ct.terminal_output.toPlainText()
+    # Summary-Format (erste Zeile ist dank _last_summary_time = 0.0 sofort sichtbar)
+    assert "offset=-123ns" in text
+    assert "freq=1234ppb" in text
+    assert "path_delay=4568ns" in text
+
+
 def test_filtered_mode_hides_plain_lines(monkeypatch):
     from test_lock_gate_wiring import _make_tab
 

@@ -30,29 +30,25 @@ class ParsedLogEntry:
     path_delay_ns: Optional[int] = None
 
 
-# Patterns for extracting key metrics from statime output
+# Patterns for extracting key metrics from the statime log format
 STATIME_PATTERNS = [
-    # Offset/frequency patterns (common in PTP logs)
+    # "Estimated offset -123.45ns+-12.3ns, freq 1.234+-0.567, delay 4567.8+-12.3"
     {
         'key': 'offset',
         'pattern': re.compile(r'Estimated offset (-?[\d.]+)ns\+-'),
-        'severity': LogSeverity.INFO,
     },
     {
         'key': 'freq_ppb',
         'pattern': re.compile(r'freq (-?[\d.]+)\+-'),
-        'severity': LogSeverity.INFO,
     },
     {
         'key': 'path_delay',
         'pattern': re.compile(r'delay (-?[\d.]+)\+-'),
-        'severity': LogSeverity.INFO,
     },
     # Real statime state transitions, e.g. "new state for port 0: Listening -> Slave"
     {
         'key': 'state',
         'pattern': re.compile(r'new state for port \d+: \w+ -> (\w+)'),
-        'severity': LogSeverity.INFO,
     },
 ]
 
@@ -127,10 +123,7 @@ class StatimeLogParser:
                     except (ValueError, IndexError):
                         pass
                 elif pat_info['key'] == 'state':
-                    try:
-                        entry.state = match.group(1).upper()
-                    except (ValueError, IndexError):
-                        pass
+                    entry.state = match.group(1).upper()
                     self._counters['state_changes'] += 1
         
         self._last_entry = entry
@@ -219,11 +212,13 @@ class StatimeLogParser:
         if entry.path_delay_ns is not None:
             self._pending_metrics['path_delay_ns'] = entry.path_delay_ns
         if entry.state is not None:
+            # Metrics measured before a state transition are stale - but a
+            # repeated same-state line ("Slave -> Slave") is not a real
+            # transition, so the pending metrics stay valid in that case.
+            if entry.state != self._last_state:
+                for key in ('offset_ns', 'freq_ppb', 'path_delay_ns'):
+                    self._pending_metrics.pop(key, None)
             self._last_state = entry.state
-            self._pending_metrics['state'] = entry.state
-            # Metrics measured before a state transition are stale
-            for key in ('offset_ns', 'freq_ppb', 'path_delay_ns'):
-                self._pending_metrics.pop(key, None)
     
     def get_sync_status(self) -> Dict[str, any]:
         """Get current sync status for UI indicators."""

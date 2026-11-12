@@ -299,12 +299,12 @@ class ControlTab(QWidget):
         layout.addLayout(top_row)
 
         # ── Bottom: Log Terminal ────────────────────────────────
-        log_group = QGroupBox("Statime Log Output (filtered)")
+        log_group = QGroupBox("Statime Log Output")
         log_layout = QVBoxLayout(log_group)
 
         # Header with verbose toggle
         log_header = QHBoxLayout()
-        self.verbose_cb = QCheckBox("Verbose (show all lines)")
+        self.verbose_cb = QCheckBox("Verbose (fast summaries)")
         self.verbose_cb.setStyleSheet("font-size: 11px;")
         self.verbose_cb.toggled.connect(self._on_verbose_toggled)
         log_header.addWidget(self.verbose_cb)
@@ -819,8 +819,9 @@ class ControlTab(QWidget):
                 continue
             # Nur komplette Zeilen (bis einschliesslich letztem '\n') an den
             # Parser geben; ein unvollstaendiger Rest bleibt im Puffer und
-            # wird erst beim naechsten Flush (oder forciert ab 8192 Zeichen)
-            # verarbeitet - sonst zerstoeren 50-ms-Chunk-Grenzen die Werte.
+            # wird erst beim naechsten Flush (oder forciert ueber 8192
+            # Zeichen) verarbeitet - sonst zerstoeren 50-ms-Chunk-Grenzen
+            # die Werte.
             end = buffer.rfind('\n')
             if end == -1:
                 if len(buffer) > _MAX_RESIDUE:

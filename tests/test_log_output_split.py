@@ -59,9 +59,13 @@ def test_forced_flush_over_8kb_without_newline(monkeypatch):
     from test_lock_gate_wiring import _make_tab
 
     ct, _ = _make_tab(monkeypatch)
-    ct._stdout_buffer = "x" * 9000              # nie `\n` → trotzdem leeren
+    calls = []
+    ct._process_log_output = lambda text: calls.append(text)   # Recorder statt Parser
+    payload = "x" * 9000              # nie `\n` → trotzdem leeren
+    ct._stdout_buffer = payload
     ct._flush_terminal()
     assert ct._stdout_buffer == ""
+    assert calls == [payload]         # Piece ging genau einmal an _process_log_output
 
 
 def test_reset_ptp_state_clears_buffer_residue(monkeypatch):

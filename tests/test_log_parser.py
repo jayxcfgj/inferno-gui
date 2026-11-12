@@ -32,6 +32,21 @@ def test_state_transition_clears_pending_metrics():
     assert s['offset_ns'] is None and s['freq_ppb'] is None and s['path_delay_ns'] is None
 
 
+def test_same_state_transition_keeps_pending_metrics():
+    """Wiederholter gleicher State ("Slave -> Slave") ist KEIN echter
+    Uebergang: die Pending-Metriken duerfen nicht geloescht werden."""
+    p = StatimeLogParser()
+    p.parse_line(EST)
+    p.parse_line(TRANS_SLAVE)         # echter Wechsel (None -> Slave): räumt auf
+    p.parse_line(EST)                 # Pending neu füllen
+    p.parse_line(TRANS_SLAVE)         # dieselbe Transitionszeile nochmal
+    s = p.get_sync_status()
+    assert s['state'] == 'SLAVE'
+    assert s['offset_ns'] is not None
+    assert s['freq_ppb'] is not None
+    assert s['path_delay_ns'] is not None
+
+
 def test_no_state_inference_from_metrics():
     p = StatimeLogParser()
     p.parse_line(EST)
