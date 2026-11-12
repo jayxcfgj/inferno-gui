@@ -54,11 +54,6 @@ STATIME_PATTERNS = [
         'pattern': re.compile(r'new state for port \d+: \w+ -> (\w+)'),
         'severity': LogSeverity.INFO,
     },
-    {
-        'key': 'port_state',
-        'pattern': re.compile(r'port\s+\d+:\s+(\w+)'),
-        'severity': LogSeverity.INFO,
-    },
 ]
 
 
