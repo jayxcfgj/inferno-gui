@@ -68,63 +68,11 @@ STATIME_PATTERNS = [
         'pattern': re.compile(r'delay\s+(-?\d+\.?\d*)'),
         'severity': LogSeverity.INFO,
     },
-    # State transitions
+    # Real statime state transitions, e.g. "new state for port 0: Listening -> Slave"
     {
-        'key': 'state_master',
-        'pattern': re.compile(r'(?:to|entered)\s+MASTER', re.IGNORECASE),
+        'key': 'state',
+        'pattern': re.compile(r'new state for port \d+: \w+ -> (\w+)'),
         'severity': LogSeverity.INFO,
-        'state': 'MASTER',
-    },
-    {
-        'key': 'state_slave',
-        'pattern': re.compile(r'(?:to|entered)\s+SLAVE', re.IGNORECASE),
-        'severity': LogSeverity.INFO,
-        'state': 'SLAVE',
-    },
-    {
-        'key': 'state_passive',
-        'pattern': re.compile(r'(?:to|entered)\s+PASSIVE', re.IGNORECASE),
-        'severity': LogSeverity.INFO,
-        'state': 'PASSIVE',
-    },
-    {
-        'key': 'state_listening',
-        'pattern': re.compile(r'(?:to|entered)\s+LISTENING', re.IGNORECASE),
-        'severity': LogSeverity.INFO,
-        'state': 'LISTENING',
-    },
-    {
-        'key': 'state_uncalibrated',
-        'pattern': re.compile(r'(?:to|entered)\s+UNCALIBRATED', re.IGNORECASE),
-        'severity': LogSeverity.WARNING,
-        'state': 'UNCALIBRATED',
-    },
-    {
-        'key': 'state_faulty',
-        'pattern': re.compile(r'(?:to|entered)\s+FAULTY', re.IGNORECASE),
-        'severity': LogSeverity.ERROR,
-        'state': 'FAULTY',
-    },
-    # Errors and warnings
-    {
-        'key': 'error',
-        'pattern': re.compile(r'(?i)error[:\s]'),
-        'severity': LogSeverity.ERROR,
-    },
-    {
-        'key': 'warning',
-        'pattern': re.compile(r'(?i)warn(?:ing)?[:\s]'),
-        'severity': LogSeverity.WARNING,
-    },
-    {
-        'key': 'sync_lost',
-        'pattern': re.compile(r'(?i)sync\s+lost|lost\s+sync'),
-        'severity': LogSeverity.ERROR,
-    },
-    {
-        'key': 'timeout',
-        'pattern': re.compile(r'(?i)timeout'),
-        'severity': LogSeverity.WARNING,
     },
     {
         'key': 'port_state',
@@ -139,7 +87,7 @@ class StatimeLogParser:
     
     def __init__(self, filter_interval: float = 1.0):
         self.filter_interval = filter_interval  # seconds between summary lines
-        self._last_summary_time = time.monotonic()
+        self._last_summary_time = 0.0  # first line is shown immediately
         self._pending_metrics: Dict[str, any] = {}
         self._last_state: Optional[str] = None
         self._counters = {
@@ -158,20 +106,35 @@ class StatimeLogParser:
         # Extract timestamp if present
         timestamp = self._extract_timestamp(line)
         
+        # Severity comes from the log level prefix, not from message text
+        # (e.g. a "ParseError" in a TRACE line is still INFO)
+        level_match = re.match(r'^\S+\s+(TRACE|DEBUG|INFO|WARN|ERROR)\s', line)
+        if level_match:
+            level = level_match.group(1)
+            if level == 'ERROR':
+                severity = LogSeverity.ERROR
+            elif level == 'WARN':
+                severity = LogSeverity.WARNING
+            else:
+                severity = LogSeverity.INFO
+            if severity == LogSeverity.ERROR:
+                self._counters['errors'] += 1
+            elif severity == LogSeverity.WARNING:
+                self._counters['warnings'] += 1
+        else:
+            severity = LogSeverity.INFO
+        
         # Check all patterns
         entry = ParsedLogEntry(
-            severity=LogSeverity.INFO,
+            severity=severity,
             timestamp=timestamp,
             message=line[:200],  # Truncate for display
             raw=line,
         )
         
-        matched_patterns = []
         for pat_info in STATIME_PATTERNS:
             match = pat_info['pattern'].search(line)
             if match:
-                matched_patterns.append((pat_info, match))
-                
                 # Update metrics
                 if pat_info['key'] in ('offset', 'rms_offset'):
                     try:
@@ -188,22 +151,12 @@ class StatimeLogParser:
                         entry.path_delay_ns = int(float(match.group(1)))
                     except (ValueError, IndexError):
                         pass
-                elif 'state' in pat_info:
-                    entry.state = pat_info['state']
-                
-                # Track severity
-                if pat_info['severity'] == LogSeverity.ERROR:
-                    self._counters['errors'] += 1
-                elif pat_info['severity'] == LogSeverity.WARNING:
-                    self._counters['warnings'] += 1
-                if 'state' in pat_info:
+                elif pat_info['key'] == 'state':
+                    try:
+                        entry.state = match.group(1).upper()
+                    except (ValueError, IndexError):
+                        pass
                     self._counters['state_changes'] += 1
-        
-        # Determine overall severity
-        if any(p[0]['severity'] == LogSeverity.ERROR for p in matched_patterns):
-            entry.severity = LogSeverity.ERROR
-        elif any(p[0]['severity'] == LogSeverity.WARNING for p in matched_patterns):
-            entry.severity = LogSeverity.WARNING
         
         self._last_entry = entry
         
@@ -291,12 +244,9 @@ class StatimeLogParser:
         if entry.state is not None:
             self._last_state = entry.state
             self._pending_metrics['state'] = entry.state
-        # Infer state from metrics if no explicit state transition
-        elif entry.offset_ns is not None or entry.freq_ppb is not None:
-            # If we're getting offset/freq data, we're likely in SLAVE state (synchronized)
-            if self._last_state != 'SLAVE':
-                self._last_state = 'SLAVE'
-                self._pending_metrics['state'] = 'SLAVE'
+            # Metrics measured before a state transition are stale
+            for key in ('offset_ns', 'freq_ppb', 'path_delay_ns'):
+                self._pending_metrics.pop(key, None)
     
     def get_sync_status(self) -> Dict[str, any]:
         """Get current sync status for UI indicators."""
