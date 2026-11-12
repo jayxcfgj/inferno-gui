@@ -616,36 +616,64 @@ class ControlTab(QWidget):
                 continue
 
             # Ehrliche Verifikation: die Node muss jetzt wirklich existieren.
-            # Ein pw-cli-Aufruf, der nur von waitForFinished zurueckkehrt, ist
-            # KEIN Beweis - genau das hat den urspruenglichen Bug verdeckt.
-            try:
-                check = subprocess.run(['pw-cli', 'ls', 'Node'],
-                                       capture_output=True, text=True, timeout=2)
-            except subprocess.TimeoutExpired:
-                self._append_log(f"{name} creation FAILED: verification timed out")
-                continue
-            except (OSError, subprocess.SubprocessError) as e:
-                self._append_log(
-                    f"{name} creation FAILED: verification could not run ({e})")
-                continue
+            # Der PipeWire-Daemon blockiert nach create-node bis zu ~13 s
+            # (der neue Node wartet auf Clock) und beantwortet in diesem
+            # Fenster keine Registry-Abfragen - ein einzelner pw-cli-Aufruf
+            # liefert daher garantiert False-Negatives. Deshalb bedingt
+            # warten: bis zu 8 Versuche / ~15 s Budget, 0,5 s Pause nach
+            # jedem erfolglosen Versuch, sofortiger Abbruch bei Erfolg.
+            deadline = time.monotonic() + 15.0
+            verified = False
+            # Letzter bekannter Misserfolgsgrund (timeout/exception/error/missing).
+            last_failure = ("timeout", None)
+            for _attempt in range(8):
+                if time.monotonic() >= deadline:
+                    break
+                try:
+                    check = subprocess.run(['pw-cli', 'ls', 'Node'],
+                                           capture_output=True, text=True,
+                                           timeout=2)
+                except subprocess.TimeoutExpired:
+                    last_failure = ("timeout", None)
+                except (OSError, subprocess.SubprocessError) as e:
+                    last_failure = ("exception", e)
+                else:
+                    node_present = re.search(
+                        rf'node\.name\s*=\s*"{re.escape(node_name)}"',
+                        check.stdout)
+                    combined = (check.stdout + check.stderr).lower()
+                    if node_present and 'error' not in combined:
+                        verified = True
+                        break
+                    if 'error' in combined:
+                        last_failure = ("error", None)
+                    else:
+                        last_failure = ("missing", node_name)
+                time.sleep(0.5)
 
-            node_present = re.search(
-                rf'node\.name\s*=\s*"{re.escape(node_name)}"', check.stdout)
-            combined = (check.stdout + check.stderr).lower()
-            if 'error' in combined:
-                self._append_log(
-                    f"{name} creation FAILED: pw-cli reported an error "
-                    "while listing nodes")
-            elif not node_present:
-                self._append_log(
-                    f'{name} creation FAILED: node "{node_name}" not found '
-                    "in PipeWire after creation")
-            else:
+            if verified:
                 output = bytes(proc.readAllStandardOutput()).decode(
                     'utf-8', errors='replace').strip()
                 if output:
                     self._append_log(f"{name} created: {output}")
                 self._append_log(f"{name} created successfully (verified)")
+            else:
+                kind, detail = last_failure
+                if kind == "timeout":
+                    self._append_log(
+                        f"{name} creation FAILED: verification timed out")
+                elif kind == "exception":
+                    self._append_log(
+                        f"{name} creation FAILED: verification could "
+                        f"not run ({detail})")
+                elif kind == "error":
+                    self._append_log(
+                        f"{name} creation FAILED: pw-cli reported an error "
+                        "while listing nodes")
+                else:
+                    self._append_log(
+                        f'{name} creation FAILED: node "{node_name}" not '
+                        "found in PipeWire after creation")
 
     def _destroy_pipewire_nodes(self):
         """Destroy PipeWire nodes for Inferno sink and source."""

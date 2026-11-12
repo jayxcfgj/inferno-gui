@@ -123,15 +123,30 @@ def _get_app():
     return _APP
 
 
+# Anzahl der gemockten `pw-cli ls Node`-Aufrufe des letzten _run_create-Laufs.
+_RUN_CALLS = []
+
+
+def _ls_calls():
+    """Nur die Verifikations-Aufrufe (`pw-cli ls Node`) zurueckgeben."""
+    return [c for c in _RUN_CALLS if c[:2] == ["pw-cli", "ls"]]
+
+
 def _run_create(monkeypatch, ls_stdout=_LS_BOTH, exit_codes=None, stderrs=None,
-                timeouts=None, run_exc=None):
+                timeouts=None, run_exc=None, ls_sequence=None):
     """_create_pipewire_nodes ausfuehren und (gesendete Befehle, Log-Text) zurueckgeben.
 
     QProcess und subprocess.run (`pw-cli ls Node`) sind gemockt: keine echten
     pw-cli-Aufrufe. `ls_stdout` ist der Fake-Output der Verifikation,
     `exit_codes`/`stderrs`/`timeouts` konfigurieren die create-Aufrufe der
     Reihe nach. `run_exc` laesst die Verifikation mit dieser Exception
-    scheitern (OSError, TimeoutExpired, ...).
+    scheitern (OSError, TimeoutExpired, ...). `ls_sequence` gibt pro
+    Verifikations-Aufruf der Reihe nach entweder eine Exception (wird
+    erneut geworfen) oder ein _FakeResult-Ergebnis; ist die Sequenz
+    aufgebraucht, gilt `ls_stdout`. Die Anzahl der ls-Aufrufe landet in
+    _RUN_CALLS.
+
+    time.sleep ist immer gemockt (kein echtes Warten in den Tests).
     """
     _get_app()
 
@@ -144,13 +159,37 @@ def _run_create(monkeypatch, ls_stdout=_LS_BOTH, exit_codes=None, stderrs=None,
     _RecordingQProcess.pending_stderrs = list(stderrs or [])
     _RecordingQProcess.pending_timeouts = list(timeouts or [])
 
-    if run_exc is not None:
+    # Retry-Schleife soll in Tests nicht real warten.
+    monkeypatch.setattr(ct_mod.time, "sleep", lambda seconds: None)
+
+    _RUN_CALLS.clear()
+
+    if ls_sequence is not None:
+        seq = list(ls_sequence)
+
+        def _seq_run(args, **kw):
+            _RUN_CALLS.append(list(args))
+            if args and args[0] != "pw-cli":
+                # Nicht-Verifikations-Aufrufe (z. B. Interface-Erkennung)
+                # verbrauchen die Sequenz nicht.
+                return _FakeResult(stdout="")
+            if seq:
+                item = seq.pop(0)
+                if isinstance(item, Exception):
+                    raise item
+                return item
+            return _FakeResult(stdout=ls_stdout)
+        monkeypatch.setattr(ct_mod.subprocess, "run", _seq_run)
+    elif run_exc is not None:
         def _raise_run(args, **kw):
+            _RUN_CALLS.append(list(args))
             raise run_exc
         monkeypatch.setattr(ct_mod.subprocess, "run", _raise_run)
     else:
-        monkeypatch.setattr(ct_mod.subprocess, "run",
-                            lambda args, **kw: _FakeResult(stdout=ls_stdout))
+        def _default_run(args, **kw):
+            _RUN_CALLS.append(list(args))
+            return _FakeResult(stdout=ls_stdout)
+        monkeypatch.setattr(ct_mod.subprocess, "run", _default_run)
     monkeypatch.setattr(cfg_mod, "get_statime_binary", lambda: Path("/bin/sh"))
     config_tmp = Path(tempfile.mkdtemp(prefix="inferno-test-config-")) / "statime-v2.toml"
     monkeypatch.setattr(cfg_mod, "get_default_statime_config", lambda v="v2": config_tmp)
@@ -263,3 +302,51 @@ def test_ls_error_output_logs_failure(monkeypatch):
     assert log.count("creation FAILED") == 2
     assert "reported an error" in log
     assert "created successfully" not in log
+
+
+# --- Retry-Verifikation (PipeWire-Daemon blockiert nach create-node) ---
+
+
+def test_verification_retries_then_succeeds(monkeypatch):
+    """Kernregression: Der Daemon blockiert nach create-node ~13 s und
+    beantwortet ls-Abfragen erst spaeter. Die ersten 2 Verifikations-
+    aufrufe werfen TimeoutExpired, der 3. liefert den Node -> sofortiger
+    Abbruch bei Erfolg (kein Weiter-Retryen bis zum Budget), Log enthaelt
+    "created successfully (verified)", NICHT "verification timed out"."""
+    timeout = subprocess.TimeoutExpired("pw-cli", 2)
+    _cmds, log = _run_create(
+        monkeypatch,
+        ls_sequence=[timeout, timeout, _FakeResult(stdout=_LS_BOTH)])
+    assert "Inferno sink created successfully (verified)" in log
+    assert "verification timed out" not in log
+    assert "creation FAILED" not in log
+    # 3 Verifikations-Aufrufe bis (inkl.) zum ersten Erfolg: 2 Timeouts +
+    # 1 Treffer; kein Weiter-Retryen bis zum Budget, sofortiger Abbruch.
+    # (Der 4. Aufruf ist die Verifikation der Source-Node.)
+    calls = _ls_calls()
+    assert len(calls) == 4
+    assert all(call == ["pw-cli", "ls", "Node"] for call in calls)
+
+
+def test_verification_all_timeouts_reports_timeout_after_retries(monkeypatch):
+    """Alle Versuche TimeoutExpired -> nach dem Retry-Budget FAILED-Log
+    "verification timed out"; Retry ist belegt (mehr als 1 Aufruf)."""
+    _cmds, log = _run_create(
+        monkeypatch,
+        ls_sequence=[subprocess.TimeoutExpired("pw-cli", 2)] * 20)
+    assert log.count("creation FAILED") == 2
+    assert "verification timed out" in log
+    assert "created successfully" not in log
+    assert len(_ls_calls()) > 2
+
+
+def test_verification_node_never_found_reports_not_found_after_retries(monkeypatch):
+    """Verifikation liefert immer Output OHNE die Inferno-Nodes -> nach
+    dem Retry-Budget FAILED-Log `node "Inferno_sink" not found`, kein
+    Erfolgs-Claim; Retry ist belegt (mehr als 1 Aufruf)."""
+    _cmds, log = _run_create(monkeypatch, ls_stdout=_LS_MISSING)
+    assert log.count("creation FAILED") == 2
+    assert 'node "Inferno_sink" not found' in log
+    assert 'node "Inferno_source" not found' in log
+    assert "created successfully" not in log
+    assert len(_ls_calls()) > 2
