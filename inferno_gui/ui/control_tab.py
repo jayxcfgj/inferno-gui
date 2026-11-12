@@ -308,6 +308,10 @@ class ControlTab(QWidget):
         self.verbose_cb.setStyleSheet("font-size: 11px;")
         self.verbose_cb.toggled.connect(self._on_verbose_toggled)
         log_header.addWidget(self.verbose_cb)
+        self.filtered_cb = QCheckBox("Filtered")
+        self.filtered_cb.setStyleSheet("font-size: 11px;")
+        self.filtered_cb.setChecked(True)
+        log_header.addWidget(self.filtered_cb)
         log_header.addStretch()
         log_header.addWidget(QLabel("PTP Log:"))
         log_layout.addLayout(log_header)
@@ -828,12 +832,21 @@ class ControlTab(QWidget):
         self._write_timer.stop()
 
     def _process_log_output(self, text: str):
-        """Process log output through parser and display filtered results."""
+        """Process log output through parser and display results.
+
+        The parser runs on every line in both modes (metrics/status keep
+        updating); the Filtered checkbox only controls what is displayed.
+        """
+        raw = not self.filtered_cb.isChecked()
         for line in text.split('\n'):
             if not line:
                 continue
             entry = self.parser.parse_line(line)
-            if entry:
+            if raw:
+                # Raw mode: show the line verbatim (no [:200] truncation).
+                self._append_colored(
+                    line, entry.severity if entry else LogSeverity.INFO)
+            elif entry:
                 # update_pending_metrics is now called internally by parse_line
                 formatted = format_log_entry(entry)
                 self._append_colored(formatted, entry.severity)
@@ -972,7 +985,7 @@ class ControlTab(QWidget):
         """Handle verbose checkbox toggle."""
         self.parser.filter_interval = 0.1 if checked else 1.0
         if checked:
-            self._append_log("Verbose mode enabled - showing all log lines")
+            self._append_log("Verbose mode enabled - showing summaries 10x/sec")
         else:
             self._append_log("Verbose mode disabled - filtered output (1 line/sec)")
 
