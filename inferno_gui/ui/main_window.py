@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self._setup_tray()
         self._setup_menu_bar()
         self._load_window_state()
+        self.settings_tab.load_settings()  # Settings beim Start laden
 
         # Open at the smallest possible width (per spec; height/position stay saved)
         if not self.isMaximized():
