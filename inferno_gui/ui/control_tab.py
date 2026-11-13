@@ -280,19 +280,15 @@ class ControlTab(QWidget):
 
         inferno_layout.addLayout(tools_layout)
 
-        # Note about inferno auto-start
-        note = QLabel(
-            "Note: The Inferno ALSA plugin activates automatically when an application "
-            "opens the 'inferno' PCM device (via PipeWire). No separate start button needed."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color: #888; font-size: 10px;")
-        inferno_layout.addWidget(note)
-        self.inferno_note = note
-
         # Quick test button
         test_row = QHBoxLayout()
         self.test_alsa_btn = QPushButton("Test ALSA Device (aplay -L)")
+        self.test_alsa_btn.setToolTip(
+            "Note: The Inferno ALSA plugin activates automatically when an application\n"
+            "opens the 'inferno' PCM device (via PipeWire). No separate start button needed.\n"
+            "\n"
+            "Click to run 'aplay -L' and check whether the inferno device is listed."
+        )
         self.test_alsa_btn.clicked.connect(self._test_alsa_device)
         test_row.addWidget(self.test_alsa_btn)
         test_row.addStretch()

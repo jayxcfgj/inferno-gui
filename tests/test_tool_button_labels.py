@@ -42,3 +42,16 @@ def test_tool_buttons_equal_width_and_window_unchanged():
     # darf durch die laengeren Texte nicht waechser werden
     assert ct.minimumSizeHint().width() == 760, \
         f"tab min width grew: {ct.minimumSizeHint().width()}px != 760px"
+
+
+def test_note_moved_to_test_button_tooltip():
+    app = QApplication.instance() or QApplication(sys.argv)
+    from inferno_gui.ui.control_tab import ControlTab
+    ct = ControlTab()
+    app.processEvents()
+    # Note-Widget ist raus
+    assert not hasattr(ct, "inferno_note"), "inferno_note still present"
+    # Text steckt als lesbbarer (mindestens zweizeiliger) Tooltip am Button
+    tip = ct.test_alsa_btn.toolTip()
+    assert "activates automatically" in tip, f"tooltip missing note text: {tip!r}"
+    assert "\n" in tip, "tooltip is one long line, unreadable"

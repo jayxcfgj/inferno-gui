@@ -105,14 +105,12 @@ def test_layout():
     assert rows[3].count() >= 7, f"status strip not distributed: {rows[3].count()} items"
     assert rows[3].indexOf(ct.ptp_freq_label) == rows[3].count() - 1, \
         "freq label not last (trailing hole on the right)"
-    # AlignTop: PTP-Box kürzer als Inferno-Box (nicht auf deren Höhe gezogen)
-    assert ct.ptp_group.height() < ct.inferno_group.height(), \
-        f"PTP box stretched to Inferno height: {ct.ptp_group.height()} vs {ct.inferno_group.height()}"
-
-    # 6) Inferno-Notiz passt bei halber Breite auf max. 2 Zeilen
-    line = ct.inferno_note.fontMetrics().lineSpacing()
-    assert ct.inferno_note.height() <= 2 * line + 6, \
-        f"note wraps beyond 2 lines: {ct.inferno_note.height()}px vs 2x{line}px"
+    # AlignTop: PTP-Box kuerzer als Inferno-Box (nicht auf deren Hoehe gezogen)
+    # Note: die Inferno-Box ist seit Entfernen der Auto-Start-Notiz kuerzer als
+    # die PTP-Box; die eigentliche Invariante bleibt, dass PTP nicht gestretched
+    # wird (Hoehe == sizeHint, AlignTop-Verhalten unveraendert).
+    assert ct.ptp_group.height() <= ct.ptp_group.sizeHint().height() + 6, \
+        f"PTP box stretched: {ct.ptp_group.height()} vs sizeHint {ct.ptp_group.sizeHint().height()}"
 
     # 7) Am kleinstmöglichen Fenster darf keine Zeile abschneiden
     ct.resize(ct.minimumSizeHint().width(), 750)
@@ -125,12 +123,6 @@ def test_layout():
         # +1: Rundungstoleranz; Margin ist 0px by design (rows determine the minimum)
         assert need <= available + 1, \
             f"PTP row {i} clips at min width: needs {need}px, only {available}px available"
-
-    # Notiz: am Maximum 2 Zeilen (bestehende Assertion bei 1000px bleibt),
-    # am Minimum reichen 3 Zeilen
-    line = ct.inferno_note.fontMetrics().lineSpacing()
-    assert ct.inferno_note.height() <= 3 * line + 6, \
-        f"note wraps beyond 3 lines at min width: {ct.inferno_note.height()}px"
 
     print("PASS: layout smoke test")
 
