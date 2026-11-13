@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle,
     QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal, QSize, QProcessEnvironment
 from PyQt6.QtGui import QFont, QColor
 
 from inferno_gui.core.config import (
@@ -28,23 +28,45 @@ def _get_pipewire_env() -> dict:
 
     When running under sudo (required for PTP hardware timestamping), PipeWire
     commands must target the actual user's PipeWire instance, not root's.
+    The returned dict can be converted to QProcessEnvironment via
+    QProcessEnvironment.fromSystemEnvironment().set(_get_pipewire_env()).
+
+    Returns a plain dict for subprocess.run() calls (which accept dict-like env).
     """
     import os
+    import pwd
+
+    # First try to get the actual user from SUDO_USER
     sudo_user = os.environ.get('SUDO_USER')
     if sudo_user and sudo_user != 'root':
-        # Get the actual user's UID
-        import pwd
         try:
             uid = pwd.getpwnam(sudo_user).pw_uid
         except KeyError:
             uid = os.getuid()
     else:
-        uid = os.getuid()
+        # No SUDO_USER - try to detect from existing XDG_RUNTIME_DIR
+        runtime = os.environ.get('XDG_RUNTIME_DIR', '')
+        if runtime and '/run/user/' in runtime:
+            # Extract UID from existing runtime dir (e.g., /run/user/1000 -> 1000)
+            try:
+                uid = int(runtime.split('/')[-2])
+            except (ValueError, IndexError):
+                uid = os.getuid()
+        else:
+            uid = os.getuid()
 
     env = os.environ.copy()
     env['XDG_RUNTIME_DIR'] = f'/run/user/{uid}'
     env['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path=/run/user/{uid}/bus'
     return env
+
+
+def _env_to_qprocessenv(env_dict: dict) -> QProcessEnvironment:
+    """Convert a plain env dict to QProcessEnvironment."""
+    base = QProcessEnvironment.systemEnvironment()
+    for key, value in env_dict.items():
+        base.insert(key, value)
+    return base
 
 
 _MAX_TERMINAL_LINES = 3000
@@ -617,7 +639,7 @@ class ControlTab(QWidget):
         for name, node_name, cmd in [("Inferno sink", "Inferno_sink", sink_cmd),
                                      ("Inferno source", "Inferno_source", source_cmd)]:
             proc = QProcess()
-            proc.setProcessEnvironment(_get_pipewire_env())
+            proc.setProcessEnvironment(_env_to_qprocessenv(_get_pipewire_env()))
             proc.start(cmd[0], cmd[1:])  # Start without bash -c
 
             timed_out = not proc.waitForFinished(10000)
@@ -1153,7 +1175,7 @@ class ControlTab(QWidget):
         self._append_log("=== ALL PipeWire Nodes ===")
         
         proc = QProcess()
-        proc.setProcessEnvironment(_get_pipewire_env())
+        proc.setProcessEnvironment(_env_to_qprocessenv(_get_pipewire_env()))
         proc.start("pw-cli", ["ls", "Node"])
         if proc.waitForFinished(5000):
             output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace')
