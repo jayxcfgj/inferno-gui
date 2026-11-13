@@ -134,9 +134,17 @@ class MainWindow(QMainWindow):
         
         tray_menu.addSeparator()
         
-        netaudio_action = QAction("🌐 Open NetAudio Web UI", self)
-        netaudio_action.triggered.connect(self.control_tab._open_netaudio)
-        tray_menu.addAction(netaudio_action)
+        self.tray_netaudio_action = QAction("🌐 Dante Routing - Open NetAudio Web UI", self)
+        self.tray_netaudio_action.triggered.connect(self.control_tab._open_netaudio)
+        tray_menu.addAction(self.tray_netaudio_action)
+        
+        self.tray_qpwgraph_action = QAction("PipeWire Routing - Open qpwgraph", self)
+        self.tray_qpwgraph_action.triggered.connect(self.control_tab._open_qpwgraph)
+        tray_menu.addAction(self.tray_qpwgraph_action)
+        
+        self.tray_cable_action = QAction("PipeWire Settings - Open Cable", self)
+        self.tray_cable_action.triggered.connect(self.control_tab._open_cable)
+        tray_menu.addAction(self.tray_cable_action)
         
         tray_menu.addSeparator()
         
