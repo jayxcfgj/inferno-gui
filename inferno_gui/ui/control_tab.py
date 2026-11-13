@@ -215,11 +215,11 @@ class ControlTab(QWidget):
         tools_layout = QVBoxLayout()
         tools_layout.setSpacing(6)
 
-        self.netaudio_btn = QPushButton("🌐 Open NetAudio Web UI")
+        self.netaudio_btn = QPushButton("🌐 Dante Routing - Open NetAudio Web UI")
         self.netaudio_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3; color: white;
-                border: none; padding: 8px 16px;
+                border: none; padding: 8px 14px;
                 font-size: 12px; border-radius: 4px;
             }
             QPushButton:hover { background-color: #1976D2; }
@@ -228,7 +228,7 @@ class ControlTab(QWidget):
         self.netaudio_btn.clicked.connect(self._open_netaudio)
         tools_layout.addWidget(self.netaudio_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
-        self.qpwgraph_btn = QPushButton("Open qpwgraph")
+        self.qpwgraph_btn = QPushButton("PipeWire Routing - Open qpwgraph")
         try:
             from PyQt6.QtGui import QIcon
             _qpw_icon = QIcon("/usr/share/icons/hicolor/32x32/apps/org.rncbc.qpwgraph.png")
@@ -242,7 +242,7 @@ class ControlTab(QWidget):
         self.qpwgraph_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9C27B0; color: white;
-                border: none; padding: 8px 16px;
+                border: none; padding: 8px 14px;
                 font-size: 12px; border-radius: 4px;
             }
             QPushButton:hover { background-color: #7B1FA2; }
@@ -250,7 +250,7 @@ class ControlTab(QWidget):
         self.qpwgraph_btn.clicked.connect(self._open_qpwgraph)
         tools_layout.addWidget(self.qpwgraph_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
-        self.cable_btn = QPushButton("Open Cable")
+        self.cable_btn = QPushButton("PipeWire Settings - Open Cable")
         try:
             from PyQt6.QtGui import QIcon
             _cable_icon = QIcon("/usr/share/icons/hicolor/scalable/apps/jack-plug.svg")
@@ -264,7 +264,7 @@ class ControlTab(QWidget):
         self.cable_btn.setStyleSheet("""
             QPushButton {
                 background-color: #FF9800; color: white;
-                border: none; padding: 8px 16px;
+                border: none; padding: 8px 14px;
                 font-size: 12px; border-radius: 4px;
             }
             QPushButton:hover { background-color: #F57C00; }
