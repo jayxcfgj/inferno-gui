@@ -8,7 +8,7 @@
 #
 # The script will:
 # 1. Update system packages
-# 2. Check/install PipeWire >= 1.1
+# 2. Check/install PipeWire >= 1.4.11
 # 3. Install required system packages
 # 4. Install Rust toolchain
 # 5. Build statime (PTP daemon) and inferno (ALSA plugin)
@@ -231,7 +231,7 @@ main() {
 ╚═════════════════════════════════════════════════════════════════════════════╝
 
 This script will install and configure:
-  • PipeWire (>= 1.1) - Audio server
+  • PipeWire (>= 1.4.11) - Audio server
   • statime           - PTP/IEEE 1588 daemon (Rust)
   • inferno           - ALSA plugin for Dante/AES67 audio
   • Optional: netaudio, Cable, Millisecond
@@ -386,21 +386,39 @@ step_pipewire() {
     
     log_info "Detected PipeWire version: $pw_version"
     
-    # Compare version with 1.1
-    local major minor
+    # Compare version with 1.4.11
+    local major minor patch
     major=$(echo "$pw_version" | cut -d. -f1)
     minor=$(echo "$pw_version" | cut -d. -f2)
+    patch=$(echo "$pw_version" | cut -d. -f3)
     
-    if [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 1 ]; }; then
-        log_success "PipeWire >= 1.1 is already installed"
+    # Default patch to 0 if not present
+    [ -z "$patch" ] && patch=0
+    
+    # Check if version >= 1.4.11
+    local version_ok=false
+    if [ "$major" -gt 1 ]; then
+        version_ok=true
+    elif [ "$major" -eq 1 ]; then
+        if [ "$minor" -gt 4 ]; then
+            version_ok=true
+        elif [ "$minor" -eq 4 ]; then
+            if [ "$patch" -ge 11 ]; then
+                version_ok=true
+            fi
+        fi
+    fi
+    
+    if [ "$version_ok" = true ]; then
+        log_success "PipeWire >= 1.4.11 is already installed"
         return 0
     fi
     
-    log_warn "PipeWire version is older than 1.1 (current: $pw_version)"
+    log_warn "PipeWire version is older than 1.4.11 (current: $pw_version)"
     log_info "Building PipeWire from source requires development packages and takes several minutes."
     
     if ! prompt_yes_no "Build and install latest PipeWire from source?" "y"; then
-        log_info "Skipping PipeWire build. Note: inferno may not work correctly with PipeWire < 1.1"
+        log_info "Skipping PipeWire build. Note: inferno may not work correctly with PipeWire < 1.4.11"
         return 0
     fi
     

@@ -11,6 +11,10 @@ htmlcov/
 .ruff_cache/
 how to install inferno_final_entwurf.txt
 initialer prompt.md
+tests/
+inferno-ptpv1.toml
+inferno-ptpv2.toml
+start_stop_inferno.txt
 
 # Distribution
 dist/
@@ -39,3 +43,4 @@ Thumbs.db
 
 # Superpowers SDD workspace
 .superpowers/
+superpowers/

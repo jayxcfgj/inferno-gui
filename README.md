@@ -17,7 +17,10 @@ A Linux desktop application for easy installing and managing **Inferno** – a D
 
 ## Screenshots
 
-*(Add screenshots here)*
+![installer](assets/installer.png.png)
+![main](assets/inferno-gui-main.png)
+![settings](assets/inferno-gui-settings-tab.png)
+
 
 ## Requirements
 
@@ -25,7 +28,7 @@ A Linux desktop application for easy installing and managing **Inferno** – a D
 |-----------|---------|---------|
 | Python | ≥ 3.10 | Runtime |
 | PyQt6 | ≥ 6.5 | GUI Framework |
-| PipeWire | ≥ 1.1 | Audio backend |
+| PipeWire | ≥ 1.4.11 | Audio backend |
 | statime | (built from source) | PTP/IEEE 1588 daemon |
 | inferno | (built from source) | ALSA plugin for Dante/AES67 |
 | linuxptp tools | Optional | ptp4l alternative |
@@ -48,7 +51,7 @@ sudo ./install_inferno.sh
 
 This script will:
 - Update system and install dependencies
-- Build PipeWire ≥ 1.1 if needed
+- Build PipeWire ≥ 1.4.11 if needed
 - Install Rust toolchain
 - Build statime and inferno from source
 - Configure network interface for PTP
@@ -120,6 +123,9 @@ Following the **Sync67** design principles:
 - **QSettings** for persistent configuration
 - **Log parsing** with filtering (1 line/sec summary)
 - **System tray** integration for background operation
+
+## Notes
+The app was made with heavy usage of various LLMs.
 
 ## Credits
 
