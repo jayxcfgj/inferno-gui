@@ -67,6 +67,10 @@ class StatimeLogParser:
             'state_changes': 0,
         }
         self._last_entry: Optional[ParsedLogEntry] = None
+        # Letzte ANGEZEIGTE Summary-Zeile - das Status-Panel koppelt im
+        # gefilterten Modus seine Anzeige-Metriken daran (Log = Single
+        # Source of Truth), nicht an die mitlaufenden Pending-Metriken.
+        self._last_summary: ParsedLogEntry | None = None
     
     def parse_line(self, line: str) -> Optional[ParsedLogEntry]:
         """Parse a single log line. Returns ParsedLogEntry if significant, None otherwise."""
@@ -178,7 +182,7 @@ class StatimeLogParser:
         
         message = " | ".join(parts)
         
-        return ParsedLogEntry(
+        summary = ParsedLogEntry(
             severity=LogSeverity.INFO,
             timestamp=base_entry.timestamp,
             message=message,
@@ -188,6 +192,9 @@ class StatimeLogParser:
             state=self._last_state,
             path_delay_ns=base_entry.path_delay_ns if base_entry.path_delay_ns is not None else self._pending_metrics.get('path_delay_ns'),
         )
+        # Merken: diese Summary-Zeile ist ab jetzt die im Log angezeigte.
+        self._last_summary = summary
+        return summary
     
     def _extract_timestamp(self, line: str) -> str:
         """Extract timestamp from log line."""
@@ -220,6 +227,10 @@ class StatimeLogParser:
                     self._pending_metrics.pop(key, None)
             self._last_state = entry.state
     
+    def get_last_summary(self) -> ParsedLogEntry | None:
+        """Letzte angezeigte Summary-Zeile (fuer die Panel-Kopplung)."""
+        return self._last_summary
+
     def get_sync_status(self) -> Dict[str, any]:
         """Get current sync status for UI indicators."""
         status = {
@@ -249,6 +260,7 @@ class StatimeLogParser:
         self._pending_metrics = {}
         self._last_state = None
         self._last_entry = None
+        self._last_summary = None
 
 
 def format_log_entry(entry: ParsedLogEntry) -> str:

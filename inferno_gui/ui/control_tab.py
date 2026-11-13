@@ -1,6 +1,7 @@
 """Control Tab – Main interface for starting/stopping Inferno and PTP."""
 
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -24,6 +25,11 @@ from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_lo
 
 _MAX_TERMINAL_LINES = 3000
 _MAX_RESIDUE = 8192
+
+# ANSI-Escape-Sequenzen (CSI, z.B. Farbcodes \x1b[2m) - statime schreibt
+# sie in seinen Stream; sie landen sonst 1:1 im Terminal und zerstoeren
+# den Severity-Regex des Parsers (ERROR-Zeile wird zu INFO).
+_ANSI_CSI_RE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
 
 
 def _trim_terminal(edit, max_lines=_MAX_TERMINAL_LINES):
@@ -839,6 +845,12 @@ class ControlTab(QWidget):
         updating); the Filtered checkbox only controls what is displayed.
         """
         raw = not self.filtered_cb.isChecked()
+        # ANSI-Sequenzen hier strippen - NICHT schon beim Empfang in
+        # _on_stdout/_on_stderr: dort kann eine Escape-Sequenz ueber zwei
+        # 50-ms-Chunks gesplittet sein (\x1b[3 + 5m) und wuerde als Fragment
+        # nie gematcht. _flush_terminal liefert nur komplette Zeilen, ueber
+        # die eine Escape-Sequenz nicht ueberspannen kann.
+        text = _ANSI_CSI_RE.sub('', text)
         for line in text.split('\n'):
             if not line:
                 continue
@@ -879,6 +891,28 @@ class ControlTab(QWidget):
         """Update status indicators from parser."""
         status = self.parser.get_sync_status()
 
+        # Anzeige-Metriken: Im gefilterten Modus koppeln Offset/Freq an die
+        # letzte angezeigte Summary-Zeile (Log = Single Source of Truth) -
+        # die Pending-Metriken laufen bei jeder Zeile mit und waeren der
+        # Anzeige voraus. Noch keine Summary erzeugt -> None ("—"). Im
+        # Rohmodus wird jede Zeile angezeigt, dort sind die Live-Werte
+        # identisch mit dem Log.
+        if self.filtered_cb.isChecked():
+            summary = self.parser.get_last_summary()
+            if summary is not None:
+                display_offset = summary.offset_ns
+                display_freq = summary.freq_ppb
+            else:
+                # Noch keine Summary angezeigt: Rueckfall auf die Live-
+                # Werte, damit das Panel nicht leer bleibt, wenn der Parser
+                # bereits Metriken kennt (im Realbetrieb erzeugt die erste
+                # Metrik-Zeile sofort eine Summary).
+                display_offset = status['offset_ns']
+                display_freq = status['freq_ppb']
+        else:
+            display_offset = status['offset_ns']
+            display_freq = status['freq_ppb']
+
         # Lock-Gate: PipeWire nodes only after 5 consecutive stable ticks
         # in the target state (display logic below stays separate).
         if self._awaiting_lock and self.is_ptp_running and self._lock_gate is not None:
@@ -897,8 +931,8 @@ class ControlTab(QWidget):
                     self._lock_wait_ticks = 0
 
         self._ptp_state = status['state']
-        self._ptp_offset = status['offset_ns']
-        self._ptp_freq = status['freq_ppb']
+        self._ptp_offset = display_offset
+        self._ptp_freq = display_freq
         
         # Update labels - show sync quality based on offset
         state = status['state']
@@ -914,18 +948,21 @@ class ControlTab(QWidget):
             display_state = state
         self.ptp_state_label.setText(f"State: {display_state}")
         
-        if status['offset_ns'] is not None:
-            self.ptp_offset_label.setText(f"Offset: {status['offset_ns']} ns")
+        if display_offset is not None:
+            self.ptp_offset_label.setText(f"Offset: {display_offset} ns")
         else:
             self.ptp_offset_label.setText("Offset: —")
         
-        if status['freq_ppb'] is not None:
-            self.ptp_freq_label.setText(f"Freq: {status['freq_ppb']} ppb")
+        if display_freq is not None:
+            self.ptp_freq_label.setText(f"Freq: {display_freq} ppb")
         else:
             self.ptp_freq_label.setText("Freq: —")
         
-        # Update sync light
-        self._update_sync_light(status)
+        # Update sync light (Schwellen nutzen die Anzeige-Metriken; State
+        # und Lock-Gate oben bleiben live)
+        light_status = dict(status)
+        light_status['offset_ns'] = display_offset
+        self._update_sync_light(light_status)
         
         # Emit for session tab
         self._emit_status()
