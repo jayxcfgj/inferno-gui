@@ -52,6 +52,10 @@ class _RecordingQProcess:
     def start(self, program, args=None):
         _RecordingQProcess.commands.append([program] + list(args or []))
 
+    def setProcessEnvironment(self, env):
+        # Mock for _get_pipewire_env() - just accept the environment
+        pass
+
     def terminate(self):
         pass
 
@@ -155,6 +159,7 @@ def _run_create(monkeypatch, ls_stdout=_LS_BOTH, exit_codes=None, stderrs=None,
     from inferno_gui.ui.control_tab import ControlTab
 
     monkeypatch.setattr(ct_mod, "QProcess", _RecordingQProcess)
+    monkeypatch.setattr(ct_mod, "_get_pipewire_env", lambda: {"XDG_RUNTIME_DIR": "/run/user/1000", "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"})
     _RecordingQProcess.pending_exit_codes = list(exit_codes or [])
     _RecordingQProcess.pending_stderrs = list(stderrs or [])
     _RecordingQProcess.pending_timeouts = list(timeouts or [])

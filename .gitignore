@@ -15,6 +15,7 @@ tests/
 inferno-ptpv1.toml
 inferno-ptpv2.toml
 start_stop_inferno.txt
+docs/
 
 # Distribution
 dist/

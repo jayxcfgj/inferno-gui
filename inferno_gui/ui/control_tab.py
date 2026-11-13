@@ -23,6 +23,30 @@ from inferno_gui.core.lock_gate import LockGate
 from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_log_entry
 
 
+def _get_pipewire_env() -> dict:
+    """Return environment dict for PipeWire commands to connect to the actual user's session.
+
+    When running under sudo (required for PTP hardware timestamping), PipeWire
+    commands must target the actual user's PipeWire instance, not root's.
+    """
+    import os
+    sudo_user = os.environ.get('SUDO_USER')
+    if sudo_user and sudo_user != 'root':
+        # Get the actual user's UID
+        import pwd
+        try:
+            uid = pwd.getpwnam(sudo_user).pw_uid
+        except KeyError:
+            uid = os.getuid()
+    else:
+        uid = os.getuid()
+
+    env = os.environ.copy()
+    env['XDG_RUNTIME_DIR'] = f'/run/user/{uid}'
+    env['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path=/run/user/{uid}/bus'
+    return env
+
+
 _MAX_TERMINAL_LINES = 3000
 _MAX_RESIDUE = 8192
 
@@ -593,6 +617,7 @@ class ControlTab(QWidget):
         for name, node_name, cmd in [("Inferno sink", "Inferno_sink", sink_cmd),
                                      ("Inferno source", "Inferno_source", source_cmd)]:
             proc = QProcess()
+            proc.setProcessEnvironment(_get_pipewire_env())
             proc.start(cmd[0], cmd[1:])  # Start without bash -c
 
             timed_out = not proc.waitForFinished(10000)
@@ -640,7 +665,7 @@ class ControlTab(QWidget):
                 try:
                     check = subprocess.run(['pw-cli', 'ls', 'Node'],
                                            capture_output=True, text=True,
-                                           timeout=2)
+                                           timeout=2, env=_get_pipewire_env())
                 except subprocess.TimeoutExpired:
                     last_failure = ("timeout", None)
                 except (OSError, subprocess.SubprocessError) as e:
@@ -694,7 +719,7 @@ class ControlTab(QWidget):
         try:
             # Use shell command for reliable node listing
             result = subprocess.run(['pw-cli', 'ls', 'Node'], 
-                                   capture_output=True, text=True, timeout=5)
+                                   capture_output=True, text=True, timeout=5, env=_get_pipewire_env())
             output = result.stdout
             
             if output:
@@ -730,7 +755,7 @@ class ControlTab(QWidget):
                     for node_id, node_name in inferno_nodes:
                         destroy_proc = subprocess.run(
                             ['pw-cli', 'destroy', node_id],
-                            capture_output=True, text=True, timeout=3
+                            capture_output=True, text=True, timeout=3, env=_get_pipewire_env()
                         )
                         if destroy_proc.returncode == 0:
                             self._append_log(f"Destroyed {node_name} (ID: {node_id})")
@@ -1128,6 +1153,7 @@ class ControlTab(QWidget):
         self._append_log("=== ALL PipeWire Nodes ===")
         
         proc = QProcess()
+        proc.setProcessEnvironment(_get_pipewire_env())
         proc.start("pw-cli", ["ls", "Node"])
         if proc.waitForFinished(5000):
             output = bytes(proc.readAllStandardOutput()).decode('utf-8', errors='replace')
