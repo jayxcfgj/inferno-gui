@@ -1095,20 +1095,22 @@ class ControlTab(QWidget):
     def _open_qpwgraph(self):
         """Open qpwgraph."""
         try:
-            subprocess.Popen(['qpwgraph'])
+            env = _get_pipewire_env()
+            subprocess.Popen(['qpwgraph'], env=env)
         except FileNotFoundError:
             try:
-                subprocess.Popen(['flatpak', 'run', 'org.freedesktop.qpwgraph'])
+                subprocess.Popen(['flatpak', 'run', 'org.freedesktop.qpwgraph'], env=env)
             except Exception as e:
                 self._append_log(f"Error opening qpwgraph: {e}")
 
     def _open_cable(self):
         """Open Cable."""
         try:
-            subprocess.Popen(['cable'])
+            env = _get_pipewire_env()
+            subprocess.Popen(['cable'], env=env)
         except FileNotFoundError:
             try:
-                subprocess.Popen(['flatpak', 'run', 'com.github.cable'])
+                subprocess.Popen(['flatpak', 'run', 'com.github.cable'], env=env)
             except Exception as e:
                 self._append_log(f"Error opening Cable: {e}")
 
