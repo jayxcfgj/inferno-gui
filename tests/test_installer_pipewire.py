@@ -30,6 +30,29 @@ def test_build_uses_meson_ninja_not_autotools():
     assert "make install" not in content
     assert "meson setup build --prefix=/usr/local" in content
     assert "ninja -C build" in content
+    for bad in (
+        "-Dpulse=",
+        "-Dsystemd=enabled",
+        "-Dffado=",
+        "-Dladspa=",
+        "-Ddsp=",
+        "-Dequalizer=",
+        "-Dlibfreeaptx=",
+        "-Dliblc3=",
+        "-Dlibldac=",
+        "-Dlibopenaptx=",
+    ):
+        assert bad not in content, bad
+    for good in (
+        "-Dlibpulse=enabled",
+        "-Dsystemd-user-service=enabled",
+        "-Dbluez5-codec-ldac=enabled",
+        "-Dlibffado=disabled",
+    ):
+        assert good in content, good
+    for line in _section("step_pipewire() {").splitlines():
+        if "rm -rf" in line:
+            assert "run_cmd_sudo" in line, line
     for line in content.splitlines():
         if "ninja -C build install" in line:
             assert "run_cmd_sudo" in line
@@ -54,6 +77,11 @@ def test_pipewire_deps_block_is_syntactically_continued():
     for pkg in (
         "meson",
         "ninja-build",
+        "git",
+        "build-essential",
+        "libpulse-dev",
+        "libjack-jackd2-dev",
+        "libglib2.0-dev",
         "libpipewire-0.3-dev",
         "libmysofa-dev",
         "libopenaptx-dev",

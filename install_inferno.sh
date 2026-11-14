@@ -438,7 +438,8 @@ step_pipewire() {
     
     log_step "Installing PipeWire build dependencies"
     run_cmd_sudo "apt-get install -y \
-        meson ninja-build pkg-config \
+        meson ninja-build pkg-config git \
+        build-essential \
         libsystemd-dev libudev-dev libasound2-dev \
         libbluetooth-dev libavahi-client-dev \
         libfftw3-dev liblcms2-dev libvulkan-dev \
@@ -446,6 +447,8 @@ step_pipewire() {
         libreadline-dev libsndfile1-dev \
         liblilv-dev libserd-dev libsord-dev \
         libzstd-dev libb2-dev \
+        libglib2.0-dev libpulse-dev \
+        libjack-jackd2-dev \
         libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
         libcamera-dev libdrm-dev libva-dev \
         bluez \
@@ -457,10 +460,10 @@ step_pipewire() {
     log_step "Cloning and building PipeWire (meson/ninja)"
     if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/pipewire" ]; then
         log_info "Removing existing pipewire directory..."
-        run_as_user "rm -rf \"$ACTUAL_HOME/pipewire\""
+        run_cmd_sudo "rm -rf \"$ACTUAL_HOME/pipewire\""
     fi
     run_as_user "cd \"$ACTUAL_HOME\" && git clone https://gitlab.freedesktop.org/pipewire/pipewire.git"
-    run_as_user "cd \"$ACTUAL_HOME/pipewire\" && meson setup build --prefix=/usr/local -Ddocs=disabled -Dman=disabled -Dsystemd=enabled -Dudev=enabled -Dbluez5=enabled -Dvulkan=disabled -Dgstreamer=disabled -Dlibcamera=disabled -Djack=enabled -Dpulse=enabled -Dalsa=enabled -Dsession-managers=wireplumber -Dffado=disabled -Droc=disabled -Dladspa=enabled -Dlv2=enabled -Ddsp=enabled -Dequalizer=enabled -Dv4l2=enabled -Dlibfreeaptx=enabled -Dliblc3=enabled -Dlibldac=enabled -Dlibopenaptx=enabled -Dlibmysofa=enabled"
+    run_as_user "cd \"$ACTUAL_HOME/pipewire\" && meson setup build --prefix=/usr/local -Ddocs=disabled -Dman=disabled -Dsystemd-user-service=enabled -Dlibsystemd=enabled -Dudev=enabled -Dbluez5=enabled -Dvulkan=disabled -Dgstreamer=disabled -Dlibcamera=disabled -Djack=enabled -Dlibpulse=enabled -Dalsa=enabled -Dsession-managers=wireplumber -Dlibffado=disabled -Droc=disabled -Dlv2=enabled -Dv4l2=enabled -Dbluez5-codec-aptx=enabled -Dbluez5-codec-lc3=enabled -Dbluez5-codec-ldac=enabled -Dlibmysofa=enabled"
     run_as_user "cd \"$ACTUAL_HOME/pipewire\" && ninja -C build"
     run_cmd_sudo "cd \"$ACTUAL_HOME/pipewire\" && ninja -C build install"
     run_cmd_sudo "ldconfig"
