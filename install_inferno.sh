@@ -545,7 +545,7 @@ step_pipewire_cleanup() {
     if ((${#PKGS[@]})); then
         printf '  %s\n' "${PKGS[@]}"
     else
-        log "Keine passenden installierten Pakete gefunden."
+        log_info "Keine passenden installierten Pakete gefunden."
     fi
 
     # -------------------------------------------------------------------------
@@ -568,7 +568,7 @@ step_pipewire_cleanup() {
     done
 
     if ((${#backup_paths[@]})); then
-        log "Konfigurations-Backup nach $backup_dir"
+    log_info "Konfigurations-Backup nach $backup_dir"
         if (( EXECUTE )); then
             run_root "mkdir -p -m 0700 \"$backup_dir\""
             # tar keeps absolute path structure below the archive root.
