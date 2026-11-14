@@ -1447,3 +1447,204 @@ show_summary() {
 
 # Run main
 main "$@"
+step_pipewire_cleanup() {
+    log_step "PipeWire Cleanup"
+
+    # Only run if explicitly selected in installation mode
+    if [ "$install_cleanup" != "true" ]; then
+        log_info "Cleanup wurde nicht im Modus 'Full installation' oder 'Cleanup only' ausgewählt."
+        log_info "Überspringe Cleanup."
+        return 0
+    fi
+
+    # -------------------------------------------------------------------------
+    # 1. EXECUTE variable sicherstellen
+    # -------------------------------------------------------------------------
+    # EXECUTE ist 1 wenn TEST_MODE false ist (echte Ausführung), 0 wenn TEST_MODE true (Dry-Run)
+    # Dies wird von den helper-Funktionen bereits via TEST_MODE abgehandelt,
+    # hier wird es explizit für die Cleanup-Logik genutzt.
+    if [ "$TEST_MODE" = "true" ]; then
+        EXECUTE=0
+    else
+        EXECUTE=1
+    fi
+
+    # -------------------------------------------------------------------------
+    # 1. Detect distro packages that match relevant families
+    # -------------------------------------------------------------------------
+    log_info "Erkannte Distro-Pakete (dpkg-query):"
+    mapfile -t PKGS < <(
+        dpkg-query -W -f='${binary:Package}\t${db:Status-Status}\n' 2>/dev/null |
+        awk -F '\t' '
+          $2 == "installed" &&
+          (
+            $1 ~ /^pipewire/ ||
+            $1 ~ /^libpipewire-/ ||
+            $1 ~ /^libspa-/ ||
+            $1 ~ /^wireplumber/ ||
+            $1 ~ /^libwireplumber-/ ||
+            $1 == "gstreamer1.0-pipewire"
+          ) { print $1 }
+        ' | sort -u
+    )
+    if ((${#PKGS[@]})); then
+        printf '  %s\n' "${PKGS[@]}"
+    else
+        log_info "Keine passenden installierten Pakete gefunden."
+    fi
+
+    # -------------------------------------------------------------------------
+    # 2. Backup configurations before any changes
+    # -------------------------------------------------------------------------
+    timestamp=$(date +%Y%m%d-%H%M%S)
+    backup_dir="/var/backups/pipewire-cleanup-$timestamp"
+    backup_paths=()
+    for p in \
+        /etc/pipewire /etc/wireplumber \
+        /etc/alsa/conf.d/50-pipewire.conf \
+        /etc/alsa/conf.d/99-pipewire-default.conf \
+        /etc/security/limits.d/25-pw-rlimits.conf \
+        "$HOME/.config/pipewire" "$HOME/.config/wireplumber" \
+        "$HOME/.config/systemd/user/pipewire.service.d" \
+        "$HOME/.config/systemd/user/pipewire-pulse.service.d" \
+        "$HOME/.config/systemd/user/wireplumber.service.d"
+    do
+        [[ -e "$p" || -L "$p" ]] && backup_paths+=("$p")
+    done
+
+    if ((${#backup_paths[@]})); then
+        log_info "Konfigurations-Backup nach $backup_dir"
+        if (( EXECUTE )); then
+            run_root "mkdir -p -m 0700 \"$backup_dir\""
+            run_root "tar -czpf \"$backup_dir/configuration.tar.gz\" --absolute-names \"${backup_paths[@]}\""
+            run_root "chmod 0600 \"$backup_dir/configuration.tar.gz\""
+        else
+            printf '  DRY-RUN: würde sichern:\n'
+            printf '    %s\n' "${backup_paths[@]}"
+        fi
+    else
+        log_info "Keine bekannten Konfigurationsverzeichnisse/-dateien zum Sichern gefunden."
+    fi
+
+    # -------------------------------------------------------------------------
+    # 3. APT-Purge Simulation und Benutzer-Bestätigung
+    # -------------------------------------------------------------------------
+    if ((${#PKGS[@]})); then
+        log_info "APT-Purge-Simulation (Pakete prüfen bevor sie entfernt werden):"
+        apt-get -s purge --no-auto-remove "${PKGS[@]}" 2>/dev/null \
+            || log_warn "APT-Simulation fehlgeschlagen."
+
+        if (( EXECUTE )); then
+            printf '\nEs werden die oben genannten Pakete/Abhängigkeiten entfernt.\n'
+            printf 'Wenn dabei Desktop-, Audio-, Bluetooth- oder andere benötigte Pakete betroffen sind: Drücke STRG+C oder antworte nicht "PURUE".\n'
+            read -r -p "Zum Fortfahren bitte 'PURGE' eingeben: " answer
+            if [ "$answer" != "PURGE" ]; then
+                log_info "Abbruch durch User. Cleanup wurde abgebrochen."
+                return 0
+            fi
+            # Stop user services before removing packages
+            for unit in pipewire.service pipewire.socket \
+                        pipewire-pulse.service pipewire-pulse.socket \
+                        wireplumber.service pipewire-media-session.service; do
+                run_as_user "systemctl --user stop \"$unit\" >/dev/null 2>&1 || true"
+            done
+        fi
+    else
+        log_info "APT-Purge übersprungen: keine passenden Pakete installiert."
+    fi
+
+    # -------------------------------------------------------------------------
+    # 4. Remove only exact files listed by the installer's root-owned manifest
+    # -------------------------------------------------------------------------
+    MANIFEST="$ACTUAL_HOME/.pipewire/manifest.txt"
+    if [[ -e "$MANIFEST" ]]; then
+        owner=$(stat -c '%u' "$MANIFEST" 2>/dev/null || printf 'unknown')
+        [[ "$owner" == "0" ]] || die "Manifest ist nicht root-eigen: $MANIFEST"
+        log_info "Quell-Installationsmanifest prüfen: $MANIFEST"
+
+        while IFS= read -r path || [[ -n "$path" ]]; do
+            [[ -z "$path" || "$path" == \#* ]] && continue
+            [[ "$path" == /* ]] || { warn "Relativer Manifestpfad Übersprung: $path"; continue; }
+            [[ "$path" != "/" ]] || { warn "Root-Pfad im Manifest Übersprung."; continue; }
+            case "$path" in
+                /usr/*|/usr/local/*|/opt/*) ;;
+                *) warn "Pfad außerhalb erlaubter Prefixe Übersprung: $path"; continue ;;
+            esac
+            # Directories are never removed from the manifest.
+            if [[ -d "$path" && ! -L "$path" ]]; then
+                warn "Verzeichnis wird nicht entfernt: $path"
+                continue
+            fi
+            if ! [[ -e "$path" || -L "$path" ]]; then
+                continue
+            fi
+            # If dpkg owns the path, leave it to APT even if an old source build
+            # overwrote its contents. This prevents the failure seen with /usr.
+            if dpkg-query -S "$path" >/dev/null 2>&1; then
+                warn "Von dpkg verwaltet, bleibt erhalten: $path"
+                continue
+            fi
+            log_info "Quell-Datei entfernen: $path"
+            run_root "rm -f -- \"$path\""
+        done < "$MANIFEST"
+
+        log_info "Manifest-Datei bleibt zur Nachvollziehbarkeit erhalten: $MANIFEST"
+    else
+        warn "Kein eigenes Installationsmanifest gefunden: $MANIFEST"
+        warn "Unbekannte/frühere Source-Installationen werden NICHT automatisch gelöscht."
+        warn "Für Altinstallationen zuerst Build-Verzeichnis/Prefix ermitteln und Dateien inventorarisieren."
+    fi
+
+    # -------------------------------------------------------------------------
+    # 5. APT purge of distro packages (only after source-manifest handling)
+    # -------------------------------------------------------------------------
+    if ((${#PKGS[@]})); then
+        if (( EXECUTE )); then
+            log_info "Entferne Distro-Pakete via APT..."
+            run_root "apt-get purge --no-auto-remove -y \"${PKGS[@]}\""
+        else
+            log_info "Distro-Pakete würden mit APT entfernt; Dry-Run aktiv."
+        fi
+    else
+        log_info "APT-Purge übersprungen: keine passenden Pakete installiert."
+    fi
+
+    # -------------------------------------------------------------------------
+    # 6. Optional configuration removal (keep by default)
+    # -------------------------------------------------------------------------
+    log_info "Konfigurationen bleiben erhalten (Standardverhalten). Falls eine Bereinigung gewünscht ist, dies später nachträglich über entsprechende Optionen tun."
+    if (( EXECUTE )); then
+        log_info "Backup wurde erstellt unter $backup_dir (Konfigurationen unverändert)."
+    fi
+
+    # -------------------------------------------------------------------------
+    # 7. Abschlussprüfung: verbliebene PipeWire-Dateien, Bibliotheken, Plugins, Dienste
+    # -------------------------------------------------------------------------
+    log_info "Abschlussprüfung:"
+    for cmd in pipewire pipewire-pulse wireplumber wpctl; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            log_info "  Noch im PATH: $cmd -> $(command -v "$cmd")"
+        else
+            log_info "  Nicht im PATH: $cmd"
+        fi
+    done
+
+    # Check for remaining files under common prefixes
+    for prefix in /usr/local /usr /opt; do
+        count=$(run_root "find \"$prefix\" -name 'pipewire*' -type f 2>/dev/null | wc -l")
+        if (( count > 0 )); then
+            log_info "  $count PipeWire-Dateien übrig unter $prefix"
+        fi
+    done
+
+    if (( EXECUTE )); then
+        run_cmd_sudo "ldconfig"
+        run_as_user "systemctl --user daemon-reload >/dev/null 2>&1 || true"
+        log_info "Bereinigung abgeschlossen. Starte KEINE neue Installation, bevor die Abschlussprüfung ausgewertet wurde."
+    else
+        log_info "Dry-Run abgeschlossen. Für tatsächliche Änderungen erneut mit voller Ausführung starten."
+    fi
+}
+
+# Run main
+main "$@"
