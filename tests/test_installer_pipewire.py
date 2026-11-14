@@ -96,3 +96,38 @@ def test_version_check_floor_unchanged():
     content = _content()
     assert "1.4.11" in content
     assert '[ "$patch" -ge 11 ]' in content
+
+
+def test_systemctl_user_in_step_pipewire_only_via_run_as_user():
+    body = _section("step_pipewire() {")
+    for line in body.splitlines():
+        if "systemctl --user" in line:
+            assert "run_as_user" in line, line
+    content = _content()
+    assert 'run_as_user "systemctl --user daemon-reload"' in content
+    assert 'run_as_user "systemctl --user restart pipewire pipewire-pulse wireplumber"' in content
+    assert 'run_as_user "systemctl --user enable --now pipewire pipewire-pulse wireplumber"' in content
+
+
+def test_wireplumber_lua_cleanup_runs_as_user_with_inner_home():
+    body = _section("step_pipewire() {")
+    lua_lines = [ln for ln in body.splitlines() if "main.lua.d" in ln]
+    assert lua_lines, "lua cleanup missing"
+    for line in lua_lines:
+        assert "run_as_user" in line, line
+        assert "run_as_user '" in line, f"must be single-quoted: {line}"
+        assert "$HOME" in line and "$ACTUAL_HOME" not in line, line
+
+
+def test_verify_installation_defined_called_and_doc_faithful():
+    content = _content()
+    assert "verify_installation() {" in content
+    assert 'run_as_user "$(declare -f verify_installation); verify_installation"' in content
+    assert "systemctl --user is-active pipewire pipewire-pulse wireplumber" in content
+    assert "which pipewire wireplumber pw-cli pw-jack" in content
+
+
+def test_pause_prompt_from_document_present():
+    content = _content()
+    assert "Bitte ALLE Audio-Apps schließen" in content
+    assert "Enter drücken wenn fertig" in content

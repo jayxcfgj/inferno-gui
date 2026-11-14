@@ -468,18 +468,40 @@ step_pipewire() {
     run_cmd_sudo "cd \"$ACTUAL_HOME/pipewire\" && ninja -C build install"
     run_cmd_sudo "ldconfig"
     
-    log_step "Restarting PipeWire services"
-    run_cmd "systemctl --user restart pipewire wireplumber"
-    sleep 2
-    
-    local new_version
-    if [ "$TEST_MODE" = true ]; then
-        new_version="1.2"
-        log_info "[TEST MODE] Simulating PipeWire version: $new_version"
-    else
-        new_version=$(pipewire --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
-    fi
-    log_success "PipeWire updated to version: $new_version"
+    log_step "Restarting PipeWire services (as user)"
+    run_as_user 'echo "⚠️  Bitte ALLE Audio-Apps schließen (Browser, VLC, qpwgraph, DAWs, ...)" && read -rp "Enter drücken wenn fertig..."'
+    run_as_user "systemctl --user daemon-reload"
+    run_as_user "systemctl --user restart pipewire pipewire-pulse wireplumber"
+
+    log_step "Cleaning up old WirePlumber Lua configs"
+    run_as_user 'if [ -d "$HOME/.config/wireplumber/main.lua.d" ]; then mv "$HOME/.config/wireplumber/main.lua.d" "$HOME/.config/wireplumber/main.lua.d.bak.$(date +%s)" && echo "Alte WirePlumber Lua-Configs nach .bak verschoben"; fi'
+
+    log_step "Enabling PipeWire user services"
+    run_as_user "systemctl --user daemon-reload"
+    run_as_user "systemctl --user enable --now pipewire pipewire-pulse wireplumber"
+
+    log_step "Verifying installation"
+    run_as_user "$(declare -f verify_installation); verify_installation"
+
+    echo ""
+    echo "✅ Fertig. PipeWire $(pipewire --version) läuft."
+    echo "   Prüfen: pw-cli info all | head -20"
+    echo "   Jack: pw-jack <deine-app>"
+}
+
+verify_installation() {
+    echo "=== Installation Verifikation ==="
+
+    pipewire --version | head -1
+    wireplumber --version | head -1
+
+    echo -e "\nBinaries:"
+    which pipewire wireplumber pw-cli pw-jack | sed 's/^/  /'
+
+    echo -e "\nServices:"
+    systemctl --user is-active pipewire pipewire-pulse wireplumber | sed 's/^/  /'
+
+    echo -e "\n✅ PipeWire $(pipewire --version | awk '{print $3}') + WirePlumber $(wireplumber --version | awk '{print $3}') bereit"
 }
 
 step_required_packages() {
