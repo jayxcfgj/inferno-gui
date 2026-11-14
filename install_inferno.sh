@@ -438,32 +438,32 @@ step_pipewire() {
     
     log_step "Installing PipeWire build dependencies"
     run_cmd_sudo "apt-get install -y \
-        build-essential gcc g++ make git meson ninja-build pkg-config \
-        python3 python3-pip python3-setuptools python3-wheel \
-        libtool autoconf automake cmake gettext \
-        libglib2.0-dev libasound2-dev libdbus-1-dev libudev-dev \
-        libsystemd-dev libpulse-dev libbluetooth-dev libusb-1.0-0-dev \
-        libsndfile1-dev libsbc-dev libopus-dev libfftw3-dev \
-        libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev \
-        libswscale-dev libswresample-dev \
+        meson ninja-build pkg-config \
+        libsystemd-dev libudev-dev libasound2-dev \
+        libbluetooth-dev libavahi-client-dev \
+        libfftw3-dev liblcms2-dev libvulkan-dev \
+        libsbc-dev libssl-dev libdbus-1-dev \
+        libreadline-dev libsndfile1-dev \
+        liblilv-dev libserd-dev libsord-dev \
+        libzstd-dev libb2-dev \
         libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-        libva-dev libv4l-dev libdrm-dev \
-        libx11-dev libxfixes-dev libxrandr-dev \
-        libwayland-dev libegl1-mesa-dev libgbm-dev \
-        libjack-jackd2-dev libsamplerate0-dev libspeexdsp-dev \
-        libflac-dev libvorbis-dev libogg-dev \
-        liblilv-dev libsord-dev libserd-dev libsratom-dev"
-    
-    log_step "Cloning and building PipeWire"
-    # Remove existing directory to allow clean clone
+        libcamera-dev libdrm-dev libva-dev \
+        bluez \
+        libfreeaptx-dev liblc3-dev libldacbt-{abr,enc}-dev \
+        libpipewire-0.3-dev \
+        libldacbt-abr-dev libldacbt-enc-dev \
+        libopenaptx-dev libmysofa-dev"
+
+    log_step "Cloning and building PipeWire (meson/ninja)"
     if [ "$TEST_MODE" = false ] && [ -d "$ACTUAL_HOME/pipewire" ]; then
         log_info "Removing existing pipewire directory..."
-        rm -rf "$ACTUAL_HOME/pipewire"
+        run_as_user "rm -rf \"$ACTUAL_HOME/pipewire\""
     fi
-    run_cmd "cd "$ACTUAL_HOME" && git clone https://gitlab.freedesktop.org/pipewire/pipewire.git"
-    run_cmd "cd "$ACTUAL_HOME/pipewire" && ./autogen.sh --prefix=/usr"
-    run_cmd "cd "$ACTUAL_HOME/pipewire" && make -j$(nproc)"
-    run_cmd_sudo "cd "$ACTUAL_HOME/pipewire" && make install"
+    run_as_user "cd \"$ACTUAL_HOME\" && git clone https://gitlab.freedesktop.org/pipewire/pipewire.git"
+    run_as_user "cd \"$ACTUAL_HOME/pipewire\" && meson setup build --prefix=/usr/local -Ddocs=disabled -Dman=disabled -Dsystemd=enabled -Dudev=enabled -Dbluez5=enabled -Dvulkan=disabled -Dgstreamer=disabled -Dlibcamera=disabled -Djack=enabled -Dpulse=enabled -Dalsa=enabled -Dsession-managers=wireplumber -Dffado=disabled -Droc=disabled -Dladspa=enabled -Dlv2=enabled -Ddsp=enabled -Dequalizer=enabled -Dv4l2=enabled -Dlibfreeaptx=enabled -Dliblc3=enabled -Dlibldac=enabled -Dlibopenaptx=enabled -Dlibmysofa=enabled"
+    run_as_user "cd \"$ACTUAL_HOME/pipewire\" && ninja -C build"
+    run_cmd_sudo "cd \"$ACTUAL_HOME/pipewire\" && ninja -C build install"
+    run_cmd_sudo "ldconfig"
     
     log_step "Restarting PipeWire services"
     run_cmd "systemctl --user restart pipewire wireplumber"
