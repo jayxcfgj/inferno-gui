@@ -323,15 +323,16 @@ EOF
         # Step 1: System Update
         step_system_update
 
-        # Step 2: PipeWire Check/Install
-        step_pipewire
-
-        # Step 2b: PipeWire Cleanup (optional, only if mode selected)
+        # Step 2: PipeWire Cleanup (optional, only if mode selected)
+        # Cleanup runs BEFORE PipeWire installation to remove old remnants
         if [ "$install_cleanup" = "true" ]; then
             step_pipewire_cleanup
         fi
 
-        # Step 3: Required Packages
+        # Step 3: PipeWire Check/Install
+        step_pipewire
+
+        # Step 4: Required Packages
         step_required_packages
 
         # Step 4: Rust Toolchain
