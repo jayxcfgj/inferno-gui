@@ -97,6 +97,20 @@ run_cmd_sudo() {
     fi
 }
 
+run_as_user() {
+    if [ "$TEST_MODE" = true ]; then
+        echo -e "${YELLOW}[DRY-RUN]${NC} $*"
+        return 0
+    fi
+    if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+        log_info "Running as user $SUDO_USER_VAL: $*"
+        sudo -H -u "$SUDO_USER_VAL" XDG_RUNTIME_DIR="/run/user/$(id -u "$SUDO_USER_VAL")" bash -c "$*"
+    else
+        log_info "Running: $*"
+        bash -c "$*"
+    fi
+}
+
 prompt_yes_no() {
     local prompt="$1"
     local default="${2:-y}"
