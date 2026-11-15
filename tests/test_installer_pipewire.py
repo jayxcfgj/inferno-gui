@@ -215,3 +215,105 @@ def test_cleanup_user_abort():
     assert "Zum Fortfahren exakt PURGE eingeben" in content
 
 
+# ---------------------------------------------------------------------------
+# Regression tests: cleanup integration correctness (round 2)
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_defined_exactly_once_and_main_invoked_once():
+    """The script must define step_pipewire_cleanup() once and invoke main once."""
+    content = _content()
+    assert content.count("step_pipewire_cleanup() {") == 1, "duplicate cleanup definition"
+    assert content.count('main "$@"') == 1, "main must be invoked exactly once"
+
+
+def test_cleanup_uses_only_defined_helpers():
+    """No calls to helpers that do not exist in this script."""
+    import re
+
+    body = _section("step_pipewire_cleanup() {")
+    assert not re.search(r'(?<![\w])log "', body), "undefined log() used"
+    assert not re.search(r'(?<![\w])die "', body), "undefined die() used"
+    assert not re.search(r'(?<![\w])warn "', body), "undefined warn() used"
+    assert not re.search(r"(?<![\w])run_root\b", body), "undefined run_root() used"
+    assert "EXECUTE" not in body, "EXECUTE is never set by the installer"
+
+
+def test_cleanup_detection_awk_program_executes():
+    """The dpkg detection awk program must be syntactically valid."""
+    import re
+    import subprocess
+
+    content = _content()
+    m = re.search(r"awk -F '\\t' '(.*?)'", content, re.DOTALL)
+    assert m, "dpkg detection awk program missing"
+    sample = (
+        "pipewire\tinstalled\n"
+        "pipewire-bin\tinstalled\n"
+        "libpipewire-0.3-0\tinstalled\n"
+        "libspa-0.2-components\tinstalled\n"
+        "wireplumber\tinstalled\n"
+        "libwireplumber-0.5-0\tinstalled\n"
+        "gstreamer1.0-pipewire\tinstalled\n"
+        "pulseaudio\tinstalled\n"
+    )
+    proc = subprocess.run(
+        ["awk", "-F", "\t", m.group(1)],
+        input=sample,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, f"awk program failed: {proc.stderr}"
+    found = proc.stdout.split()
+    for expected in (
+        "pipewire",
+        "pipewire-bin",
+        "libpipewire-0.3-0",
+        "libspa-0.2-components",
+        "wireplumber",
+        "libwireplumber-0.5-0",
+        "gstreamer1.0-pipewire",
+    ):
+        assert expected in found, f"missed package: {expected}"
+    assert "pulseaudio" not in found
+
+
+def test_cleanup_runs_after_version_check_before_build():
+    """Cleanup must run after the version check found PipeWire too old,
+    and before the build starts (full installation flow)."""
+    body = _section("step_pipewire() {")
+    assert "step_pipewire_cleanup" in body, "cleanup not wired into step_pipewire"
+    i_detect = body.index("Detected PipeWire version")
+    i_cleanup = body.index("step_pipewire_cleanup")
+    i_build = body.index("meson setup build")
+    assert i_detect < i_cleanup < i_build, (
+        f"wrong order: detect={i_detect} cleanup={i_cleanup} build={i_build}"
+    )
+
+
+def test_cleanup_only_mode_reaches_cleanup():
+    """Mode 'Cleanup only' must reach the cleanup step instead of exiting early."""
+    main_body = _section("main() {")
+    lines = main_body.splitlines()
+    nothing_idx = next(
+        (i for i, ln in enumerate(lines) if "Nothing selected" in ln), None
+    )
+    assert nothing_idx is not None, "nothing-selected guard missing"
+    cond = lines[nothing_idx - 1]
+    assert "install_cleanup" in cond, f"guard ignores cleanup: {cond}"
+    # the only cleanup invocation in main() must be guarded by cleanup==true
+    # && inferno==false (standalone cleanup path)
+    calls = [i for i, ln in enumerate(lines) if ln.strip() == "step_pipewire_cleanup"]
+    assert len(calls) == 1, f"unexpected cleanup calls in main: {calls}"
+    guard = lines[calls[0] - 1]
+    assert 'install_cleanup" = "true"' in guard, guard
+    assert 'install_inferno" = "false"' in guard, guard
+
+
+def test_version_detection_includes_patch_level():
+    """Version extraction must capture major.minor.patch (1.4.11 floor)."""
+    body = _section("step_pipewire() {")
+    assert "[0-9]+\\.[0-9]+(\\.[0-9]+)?" in body
+
+
