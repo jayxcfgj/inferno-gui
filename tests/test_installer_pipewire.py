@@ -383,3 +383,18 @@ def test_cleanup_simulation_uses_c_locale():
     """apt-Simulation mit LC_ALL=C, damit die englischen Sektionsheader stabil parsebar sind."""
     content = _content()
     assert "LC_ALL=C apt-get -s purge" in content
+
+
+def test_version_ok_offers_rebuild_prompt():
+    """Auch bei bestandener Versionspruefung gibt es eine Freifrage (Default n),
+    die in denselben Cleanup+Build-Pfad fuehrt."""
+    body = _section("step_pipewire() {")
+    i_ok = body.index("already installed")
+    i_prompt = body.index(
+        'prompt_yes_no "Build and install the latest PipeWire version anyway?" "n"'
+    )
+    i_cleanup = body.index("step_pipewire_cleanup")
+    i_build = body.index("meson setup build")
+    assert i_ok < i_prompt < i_cleanup < i_build, (
+        f"wrong order: ok={i_ok} prompt={i_prompt} cleanup={i_cleanup} build={i_build}"
+    )

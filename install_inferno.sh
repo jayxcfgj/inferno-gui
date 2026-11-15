@@ -446,16 +446,19 @@ step_pipewire() {
     fi
     
     if [ "$version_ok" = true ]; then
-        log_success "PipeWire >= 1.4.11 is already installed"
-        return 0
-    fi
-    
-    log_warn "PipeWire version is older than 1.4.11 (current: $pw_version)"
-    log_info "Building PipeWire from source requires development packages and takes several minutes."
-    
-    if ! prompt_yes_no "Build and install latest PipeWire from source?" "y"; then
-        log_info "Skipping PipeWire build. Note: inferno may not work correctly with PipeWire < 1.4.11"
-        return 0
+        log_success "PipeWire >= 1.4.11 is already installed ($pw_version)"
+        if ! prompt_yes_no "Build and install the latest PipeWire version anyway?" "n"; then
+            log_info "Installierte Version $pw_version bleibt erhalten."
+            return 0
+        fi
+        log_info "Rebuild gewaehlt - fahre fort mit Bereinigung und Build."
+    else
+        log_warn "PipeWire version is older than 1.4.11 (current: $pw_version)"
+        log_info "Building PipeWire from source requires development packages and takes several minutes."
+        if ! prompt_yes_no "Build and install latest PipeWire from source?" "y"; then
+            log_info "Skipping PipeWire build. Note: inferno may not work correctly with PipeWire < 1.4.11"
+            return 0
+        fi
     fi
     
     # Alte PipeWire-Reste bereinigen, BEVOR neu gebaut wird.
