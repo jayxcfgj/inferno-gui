@@ -593,14 +593,46 @@ step_pipewire_cleanup() {
     fi
 
     # -------------------------------------------------------------------------
-    # 3. APT-Purge simulieren und explizite Bestaetigung einholen
+    # 3. APT-Purge simulieren, Schutzgate pruefen, explizite Bestaetigung
     # -------------------------------------------------------------------------
+    local purge_allowed=false
     if ((${#PKGS[@]})); then
         log_info "APT-Purge-Simulation (bitte die Liste der zu entfernenden Pakete pruefen):"
-        apt-get -s purge --no-auto-remove "${PKGS[@]}" 2>/dev/null \
-            || log_warn "APT-Simulation fehlgeschlagen - es wird nichts entfernt."
+        local sim_out=""
+        if sim_out=$(LC_ALL=C apt-get -s purge --no-auto-remove "${PKGS[@]}" 2>&1); then
+            printf '%s\n' "$sim_out"
+            local gate_prog='$0 == "The following packages will be REMOVED:" { s = "R"; next }
+$0 == "The following NEW packages will be installed:" { s = "N"; next }
+/^[^ ]/ { s = ""; next }
+s == "R" || s == "N" {
+  line = $0
+  gsub(/\*/, "", line)
+  gsub(/,/, " ", line)
+  n = split(line, a, /[ \t]+/)
+  for (i = 1; i <= n; i++) {
+    pkg = a[i]
+    if (pkg == "") continue
+    ok = (pkg ~ /^pipewire($|-)/ || pkg ~ /^libpipewire-/ || pkg ~ /^libspa-/ || pkg ~ /^wireplumber($|-)/ || pkg ~ /^libwireplumber-/ || pkg == "gstreamer1.0-pipewire")
+    if (s == "N" || !ok) print pkg
+  }
+  }'
+            local violations=""
+            violations=$(printf '%s\n' "$sim_out" | awk "$gate_prog" | sort -u) \
+                || violations="Auswertung fehlgeschlagen"
+            if [ -n "$violations" ]; then
+                log_warn "Purge uebersprungen (Schutzgate): betroffene Pakete ausserhalb der PipeWire-Familien:"
+                printf '%s\n' "$violations" | sed 's/^/    /'
+                log_warn "Distro-Pakete bleiben installiert (Desktop/DE haengt an diesen Paketen)."
+                log_info "Der Source-Build nach /usr/local hat Vorrang (PATH/ld.so.cache/systemd)."
+            else
+                purge_allowed=true
+            fi
+        else
+            printf '%s\n' "$sim_out"
+            log_warn "APT-Simulation fehlgeschlagen - es wird nichts entfernt."
+        fi
 
-        if [ "$TEST_MODE" = false ]; then
+        if [ "$purge_allowed" = "true" ] && [ "$TEST_MODE" = false ]; then
             printf '\nAPT wird die oben angezeigten Pakete/Abhaengigkeiten entfernen.\n'
             printf 'Wenn dabei Desktop-, Audio-, Bluetooth- oder andere benoetigte Pakete betroffen sind: ABBRECHEN.\n'
             local answer=""
@@ -680,9 +712,11 @@ step_pipewire_cleanup() {
     # -------------------------------------------------------------------------
     # 5. Distro-Pakete per APT entfernen (nach der Manifest-Behandlung)
     # -------------------------------------------------------------------------
-    if ((${#PKGS[@]})); then
+    if [ "$purge_allowed" = "true" ]; then
         log_info "Entferne Distro-Pakete via APT..."
         run_cmd_sudo "apt-get purge --no-auto-remove -y ${PKGS[*]}"
+    elif ((${#PKGS[@]})); then
+        log_info "APT-Purge uebersprungen (Schutzgate: Kaskade ausserhalb der PipeWire-Familien oder Simulation fehlgeschlagen)."
     else
         log_info "Keine Distro-Pakete zu entfernen."
     fi

@@ -317,3 +317,69 @@ def test_version_detection_includes_patch_level():
     assert "[0-9]+\\.[0-9]+(\\.[0-9]+)?" in body
 
 
+# ---------------------------------------------------------------------------
+# Regression tests: apt purge safety gate (round 3)
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_gate_parses_apt_simulation_cascade():
+    """Schutzgate: Parsing der LC_ALL=C apt-Simulation erkennt Kaskade ausserhalb der Familien."""
+    import re
+    import subprocess
+
+    content = _content()
+    m = re.search(r"local gate_prog='(.*?)'", content, re.DOTALL)
+    assert m, "gate_prog missing"
+    sample = """Reading package lists... Done
+Building dependency tree... Done
+The following packages were automatically installed and are no longer required:
+  aj-snapshot cabextract fonts-liberation2
+Use 'sudo apt autoremove' to remove them.
+The following NEW packages will be installed:
+  pulseaudio
+The following packages will be REMOVED:
+  blueman* cable* celluloid* cinnamon* cinnamon-dbg* gstreamer1.0-pipewire*
+  gstreamer1.0-plugins-bad* hypnotix* libfluidsynth3* libmpv2*
+  libpipewire-0.3-0t64* libpipewire-0.3-common* libpipewire-0.3-dev*
+  libspa-0.2-modules* libwireplumber-0.4-0* mint-meta-cinnamon*
+  pipewire* pipewire-alsa* pipewire-audio* pipewire-bin* pipewire-jack*
+  pipewire-pulse* qpwgraph* wireplumber* xdg-desktop-portal*
+  xdg-desktop-portal-gtk*
+0 upgraded, 1 newly installed, 33 to remove and 8 not upgraded.
+"""
+    proc = subprocess.run(
+        ["awk", m.group(1)], input=sample, capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, f"awk program failed: {proc.stderr}"
+    found = set(proc.stdout.split())
+    must_flag = {
+        "cinnamon", "cinnamon-dbg", "mint-meta-cinnamon", "blueman",
+        "celluloid", "hypnotix", "xdg-desktop-portal", "xdg-desktop-portal-gtk",
+        "qpwgraph", "cable", "gstreamer1.0-plugins-bad", "libmpv2",
+        "libfluidsynth3", "pulseaudio",
+    }
+    must_pass = {
+        "gstreamer1.0-pipewire", "libpipewire-0.3-0t64", "libpipewire-0.3-common",
+        "libpipewire-0.3-dev", "libspa-0.2-modules", "libwireplumber-0.4-0",
+        "pipewire", "pipewire-alsa", "pipewire-audio", "pipewire-bin",
+        "pipewire-jack", "pipewire-pulse", "wireplumber",
+    }
+    assert must_flag <= found, f"not flagged: {must_flag - found}"
+    assert not (must_pass & found), f"wrongly flagged: {must_pass & found}"
+
+
+def test_cleanup_gate_guards_purge():
+    """Gate liegt vor dem PURGE-Prompt, Purge ist an purge_allowed gebunden, Fail-safe vorhanden."""
+    body = _section("step_pipewire_cleanup() {")
+    assert body.index("gate_prog") < body.index("Zum Fortfahren exakt PURGE eingeben")
+    assert "Purge uebersprungen (Schutzgate)" in body
+    assert "Auswertung fehlgeschlagen" in body, "parse failure must fail safe (skip purge)"
+    i_purge_cmd = body.index('apt-get purge --no-auto-remove -y')
+    guard_zone = body[max(0, i_purge_cmd - 400) : i_purge_cmd]
+    assert 'purge_allowed" = "true"' in guard_zone, "purge command not guarded"
+
+
+def test_cleanup_simulation_uses_c_locale():
+    """apt-Simulation mit LC_ALL=C, damit die englischen Sektionsheader stabil parsebar sind."""
+    content = _content()
+    assert "LC_ALL=C apt-get -s purge" in content
