@@ -385,6 +385,79 @@ def test_cleanup_simulation_uses_c_locale():
     assert "LC_ALL=C apt-get -s purge" in content
 
 
+def test_cleanup_gate_fails_closed_without_removed_header():
+    """Schutzgate fail-closed: fehlt der exakte REMOVED-Header in der
+    LC_ALL=C apt-Ausgabe (apt hat die Sektion umformuliert), ist die
+    Auswertung unzuverlaessig -> violations = "Auswertung fehlgeschlagen"
+    -> purge_allowed bleibt false (Fail-safe, nie purge).
+
+    Extrahiert den realen Auswertungsblock aus step_pipewire_cleanup()
+    und fuehrt ihn mit gestubten log_*/sim_out aus.
+    """
+    import subprocess
+
+    body = _section("step_pipewire_cleanup() {")
+    start = body.index("local gate_prog=")
+    end = body.index('if [ "$purge_allowed" = "true" ]')
+    block = body[start:end]
+
+    def run_gate(sim_out: str) -> str:
+        script = (
+            'log_warn() { printf "WARN: %s\\n" "$*"; }\n'
+            'log_info() { printf "INFO: %s\\n" "$*"; }\n'
+            "eval_gate() {\n"
+            "    local purge_allowed=false\n"
+            "    if true; then\n"
+            f"{block}"
+            '    printf \'PURGE_ALLOWED=%s\\n\' "$purge_allowed"\n'
+            "}\n"
+            f"sim_out='{sim_out}'\n"
+            "eval_gate\n"
+        )
+        proc = subprocess.run(
+            ["bash"], input=script, capture_output=True, text=True, check=False
+        )
+        assert proc.returncode == 0, f"bash failed: {proc.stderr}\nscript:\n{script}"
+        return proc.stdout
+
+    # 1) apt hat die Sektion umformuliert -> kein exakter Header -> kein Token
+    #    aus der REMOVED-Sektion -> OHNE Guard waere violations="" -> purge erlaubt!
+    reworded = (
+        "Reading package lists... Done\n"
+        "Building dependency tree... Done\n"
+        "The following packages will be REMOVED (details):\n"
+        "  pipewire* wireplumber*\n"
+        "0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded."
+    )
+    out = run_gate(reworded)
+    assert "Auswertung fehlgeschlagen" in out, (
+        "missing-header must be treated as parse failure (fail-safe):\n" + out
+    )
+    assert "PURGE_ALLOWED=false" in out, "purge must stay blocked:\n" + out
+
+    # 2) Positivkontrolle: exakter Header, saubere Kaskade -> Purge erlaubt
+    clean = (
+        "Reading package lists... Done\n"
+        "The following packages will be REMOVED:\n"
+        "  libpipewire-0.3-0t64* pipewire* pipewire-bin* wireplumber*\n"
+        "0 upgraded, 0 newly installed, 4 to remove and 0 not upgraded."
+    )
+    out = run_gate(clean)
+    assert "PURGE_ALLOWED=true" in out, "clean run must allow purge:\n" + out
+    assert "Auswertung fehlgeschlagen" not in out, out
+
+    # 3) Positivkontrolle: exakter Header, Kaskade ausserhalb der Familien
+    cascade = (
+        "Reading package lists... Done\n"
+        "The following packages will be REMOVED:\n"
+        "  cinnamon* pipewire* wireplumber*\n"
+        "0 upgraded, 0 newly installed, 3 to remove and 0 not upgraded."
+    )
+    out = run_gate(cascade)
+    assert "PURGE_ALLOWED=false" in out, "cascade must block purge:\n" + out
+    assert "cinnamon" in out, out
+
+
 def test_version_ok_offers_rebuild_prompt():
     """Auch bei bestandener Versionspruefung gibt es eine Freifrage (Default n),
     die in denselben Cleanup+Build-Pfad fuehrt."""

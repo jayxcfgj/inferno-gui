@@ -160,6 +160,7 @@ s == "R" || s == "N" {
                 printf '%s\n' "$violations" | sed 's/^/    /'
                 log_warn "Distro-Pakete bleiben installiert (Desktop/DE haengt an diesen Paketen)."
                 log_info "Der Source-Build nach /usr/local hat Vorrang (PATH/ldconfig/systemd)."
+# Erratum: shipped code uses `(PATH/ld.so.cache/systemd)` — the pinned `ldconfig`→`run_cmd_sudo` constraint (existing test) outranks this sample (controller ruling).
             else
                 purge_allowed=true
             fi

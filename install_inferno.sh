@@ -602,8 +602,10 @@ step_pipewire_cleanup() {
     if ((${#PKGS[@]})); then
         log_info "APT-Purge-Simulation (bitte die Liste der zu entfernenden Pakete pruefen):"
         local sim_out=""
-        if sim_out=$(LC_ALL=C apt-get -s purge --no-auto-remove "${PKGS[@]}" 2>&1); then
-            printf '%s\n' "$sim_out"
+        local sim_rc=0
+        sim_out=$(LC_ALL=C apt-get -s purge --no-auto-remove "${PKGS[@]}" 2>&1) || sim_rc=$?
+        printf '%s\n' "$sim_out"
+        if ((sim_rc == 0)); then
             local gate_prog='$0 == "The following packages will be REMOVED:" { s = "R"; next }
 $0 == "The following NEW packages will be installed:" { s = "N"; next }
 /^[^ ]/ { s = ""; next }
@@ -622,6 +624,12 @@ s == "R" || s == "N" {
             local violations=""
             violations=$(printf '%s\n' "$sim_out" | awk "$gate_prog" | sort -u) \
                 || violations="Auswertung fehlgeschlagen"
+            # Fail-safe: kein exakter REMOVED-Header in der C-Locale-Ausgabe
+            # (apt hat die Sektion umformuliert) -> Auswertung unzuverlaessig,
+            # violations bleibt gesperrt und der Purge wird uebersprungen.
+            if ! grep -qxF 'The following packages will be REMOVED:' <<<"$sim_out"; then
+                violations="Auswertung fehlgeschlagen"
+            fi
             if [ -n "$violations" ]; then
                 log_warn "Purge uebersprungen (Schutzgate): betroffene Pakete ausserhalb der PipeWire-Familien:"
                 printf '%s\n' "$violations" | sed 's/^/    /'
@@ -631,7 +639,6 @@ s == "R" || s == "N" {
                 purge_allowed=true
             fi
         else
-            printf '%s\n' "$sim_out"
             log_warn "APT-Simulation fehlgeschlagen - es wird nichts entfernt."
         fi
 
