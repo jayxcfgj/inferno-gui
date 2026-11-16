@@ -303,7 +303,7 @@ EOF
             install_cable=$(prompt_yes_no "Install Cable (PipeWire GUI)?" "y" && echo "true" || echo "false")
             install_millisecond=$(prompt_yes_no "Install Millisecond (realtime tuning)?" "y" && echo "true" || echo "false")
             install_gui=$(prompt_yes_no "Install Inferno GUI (PyQt6 control panel)?" "y" && echo "true" || echo "false")
-            install_cleanup=$(prompt_yes_no "PipeWire-Quell- und Distro-Bereinigung durchführen?" "n" && echo "true" || echo "false")
+            install_cleanup=$(prompt_yes_no "Perform PipeWire source and distro cleanup?" "n" && echo "true" || echo "false")
             if [ "$install_netaudio" = "true" ] || [ "$install_cable" = "true" ] || [ "$install_millisecond" = "true" ] || [ "$install_gui" = "true" ]; then
                 install_optional=true
             fi
@@ -318,11 +318,11 @@ EOF
         exit 0
     fi
 
-    # Standalone-Pfad: nur Cleanup gewaehlt (kein Inferno, keine Optionals)
+    # Standalone path: only cleanup selected (no inferno, no optional tools)
     if [ "$install_cleanup" = "true" ] && [ "$install_inferno" = "false" ]; then
         step_pipewire_cleanup
         if [ "$install_optional" = "false" ]; then
-            log_success "Cleanup abgeschlossen."
+            log_success "Cleanup complete."
             return 0
         fi
     fi
@@ -333,7 +333,8 @@ EOF
         step_system_update
 
         # Step 2: PipeWire Check/Install
-        # (Cleanup laeuft dort nur, wenn die installierte Version zu alt ist)
+        # (Cleanup runs when the installed version is too old, or when it
+        # already meets the floor and the user opts into the rebuild)
         step_pipewire
 
         # Step 4: Required Packages
@@ -405,8 +406,8 @@ step_pipewire() {
         pw_version="0.3"
         log_info "[TEST MODE] Simulating PipeWire version: $pw_version"
     else
-        # Version aus "pipewire --version": bevorzugt die zur Laufzeit gelinkte
-        # Bibliothek ("Linked with libpipewire X.Y.Z"), sonst der letzte Treffer.
+        # Version from "pipewire --version": prefer the library linked at
+        # runtime ("Linked with libpipewire X.Y.Z"), else the last match.
         local ver_out
         ver_out=$(pipewire --version 2>/dev/null || true)
         pw_version=$(printf '%s\n' "$ver_out" | grep -i 'linked' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)
@@ -448,10 +449,10 @@ step_pipewire() {
     if [ "$version_ok" = true ]; then
         log_success "PipeWire >= 1.4.11 is already installed ($pw_version)"
         if ! prompt_yes_no "Build and install the latest PipeWire version anyway?" "n"; then
-            log_info "Installierte Version $pw_version bleibt erhalten."
+            log_info "Installed version $pw_version is kept."
             return 0
         fi
-        log_info "Rebuild gewaehlt - fahre fort mit Bereinigung und Build."
+        log_info "Rebuild selected - continuing with cleanup (if enabled) and build."
     else
         log_warn "PipeWire version is older than 1.4.11 (current: $pw_version)"
         log_info "Building PipeWire from source requires development packages and takes several minutes."
@@ -461,11 +462,13 @@ step_pipewire() {
         fi
     fi
     
-    # Alte PipeWire-Reste bereinigen, BEVOR neu gebaut wird.
-    # Reihenfolge: Versionscheck -> bei zu alter Version Cleanup -> Installation.
+    # Clean up old PipeWire leftovers BEFORE rebuilding.
+    # Order: version check -> cleanup -> build/installation. Cleanup runs when
+    # the installed version is too old, or when it already meets the floor and
+    # the user opted into the rebuild (only if cleanup is enabled).
     if [ "${install_cleanup:-false}" = "true" ]; then
         if ! step_pipewire_cleanup; then
-            log_error "PipeWire-Bereinigung abgebrochen. Installation wird beendet."
+            log_error "PipeWire cleanup aborted. Installation will be terminated."
             exit 1
         fi
     fi
@@ -523,12 +526,12 @@ step_pipewire() {
     run_cmd_sudo "ldconfig"
     
     log_step "Restarting PipeWire services (as user)"
-    run_as_user 'echo "⚠️  Bitte ALLE Audio-Apps schließen (Browser, VLC, qpwgraph, DAWs, ...)" && read -rp "Enter drücken wenn fertig..."'
+    run_as_user 'echo "⚠️  Please close ALL audio apps (Browser, VLC, qpwgraph, DAWs, ...)" && read -rp "Press Enter when done..."'
     run_as_user "systemctl --user daemon-reload"
     run_as_user "systemctl --user restart pipewire pipewire-pulse wireplumber"
 
     log_step "Cleaning up old WirePlumber Lua configs"
-    run_as_user 'if [ -d "$HOME/.config/wireplumber/main.lua.d" ]; then mv "$HOME/.config/wireplumber/main.lua.d" "$HOME/.config/wireplumber/main.lua.d.bak.$(date +%s)" && echo "Alte WirePlumber Lua-Configs nach .bak verschoben"; fi'
+    run_as_user 'if [ -d "$HOME/.config/wireplumber/main.lua.d" ]; then mv "$HOME/.config/wireplumber/main.lua.d" "$HOME/.config/wireplumber/main.lua.d.bak.$(date +%s)" && echo "Old WirePlumber Lua configs moved to .bak"; fi'
 
     log_step "Enabling PipeWire user services"
     run_as_user "systemctl --user daemon-reload"
@@ -538,18 +541,18 @@ step_pipewire() {
     run_as_user "$(declare -f verify_installation); verify_installation"
 
     echo ""
-    echo "✅ Fertig. PipeWire $(pipewire --version) läuft."
-    echo "   Prüfen: pw-cli info all | head -20"
-    echo "   Jack: pw-jack <deine-app>"
+    echo "✅ Done. PipeWire $(pipewire --version) is running."
+    echo "   Check: pw-cli info all | head -20"
+    echo "   Jack: pw-jack <your-app>"
 }
 
 step_pipewire_cleanup() {
     log_step "PipeWire Cleanup"
 
     # -------------------------------------------------------------------------
-    # 1. Distro-Pakete der PipeWire-Familien erkennen (dpkg-query)
+    # 1. Detect distro packages of the PipeWire families (dpkg-query)
     # -------------------------------------------------------------------------
-    log_info "Erkannte Distro-Pakete (dpkg-query):"
+    log_info "Detected distro packages (dpkg-query):"
     local -a PKGS=()
     mapfile -t PKGS < <(
         dpkg-query -W -f='${binary:Package}\t${db:Status-Status}\n' 2>/dev/null |
@@ -558,11 +561,11 @@ step_pipewire_cleanup() {
     if ((${#PKGS[@]})); then
         printf '  %s\n' "${PKGS[@]}"
     else
-        log_info "Keine passenden installierten Pakete gefunden."
+        log_info "No matching installed packages found."
     fi
 
     # -------------------------------------------------------------------------
-    # 2. Konfigurationen sichern (vor jeder Aenderung)
+    # 2. Back up configurations (before any change)
     # -------------------------------------------------------------------------
     local timestamp backup_dir
     timestamp=$(date +%Y%m%d-%H%M%S)
@@ -585,22 +588,22 @@ step_pipewire_cleanup() {
     done
 
     if ((${#backup_paths[@]})); then
-        log_info "Konfigurations-Backup nach $backup_dir"
+        log_info "Configuration backup to $backup_dir"
         local tar_args=""
         printf -v tar_args '%q ' "${backup_paths[@]}"
         run_cmd_sudo "mkdir -p -m 0700 \"$backup_dir\""
         run_cmd_sudo "tar -czpf \"$backup_dir/configuration.tar.gz\" --absolute-names $tar_args"
         run_cmd_sudo "chmod 0600 \"$backup_dir/configuration.tar.gz\""
     else
-        log_info "Keine bekannten Konfigurationsverzeichnisse/-dateien zum Sichern gefunden."
+        log_info "No known configuration directories/files to back up found."
     fi
 
     # -------------------------------------------------------------------------
-    # 3. APT-Purge simulieren, Schutzgate pruefen, explizite Bestaetigung
+    # 3. Simulate APT purge, check the safety gate, explicit confirmation
     # -------------------------------------------------------------------------
     local purge_allowed=false
     if ((${#PKGS[@]})); then
-        log_info "APT-Purge-Simulation (bitte die Liste der zu entfernenden Pakete pruefen):"
+        log_info "APT purge simulation (please review the list of packages to be removed):"
         local sim_out=""
         local sim_rc=0
         sim_out=$(LC_ALL=C apt-get -s purge --no-auto-remove "${PKGS[@]}" 2>&1) || sim_rc=$?
@@ -623,35 +626,35 @@ s == "R" || s == "N" {
   }'
             local violations=""
             violations=$(printf '%s\n' "$sim_out" | awk "$gate_prog" | sort -u) \
-                || violations="Auswertung fehlgeschlagen"
-            # Fail-safe: kein exakter REMOVED-Header in der C-Locale-Ausgabe
-            # (apt hat die Sektion umformuliert) -> Auswertung unzuverlaessig,
-            # violations bleibt gesperrt und der Purge wird uebersprungen.
+                || violations="Evaluation failed"
+            # Fail-safe: no exact REMOVED header in the C-locale output
+            # (apt reworded the section) -> evaluation unreliable,
+            # violations stays locked and the purge is skipped.
             if ! grep -qxF 'The following packages will be REMOVED:' <<<"$sim_out"; then
-                violations="Auswertung fehlgeschlagen"
+                violations="Evaluation failed"
             fi
             if [ -n "$violations" ]; then
-                log_warn "Purge uebersprungen (Schutzgate): betroffene Pakete ausserhalb der PipeWire-Familien:"
+                log_warn "Purge skipped (safety gate): affected packages outside the PipeWire families, or evaluation failed:"
                 printf '%s\n' "$violations" | sed 's/^/    /'
-                log_warn "Distro-Pakete bleiben installiert (Desktop/DE haengt an diesen Paketen)."
-                log_info "Der Source-Build nach /usr/local hat Vorrang (PATH/ld.so.cache/systemd)."
+                log_warn "Distro packages stay installed (desktop/DE depends on these packages)."
+                log_info "The source build to /usr/local takes precedence (PATH/ld.so.cache/systemd)."
             else
                 purge_allowed=true
             fi
         else
-            log_warn "APT-Simulation fehlgeschlagen - es wird nichts entfernt."
+            log_warn "APT simulation failed - nothing will be removed."
         fi
 
         if [ "$purge_allowed" = "true" ] && [ "$TEST_MODE" = false ]; then
-            printf '\nAPT wird die oben angezeigten Pakete/Abhaengigkeiten entfernen.\n'
-            printf 'Wenn dabei Desktop-, Audio-, Bluetooth- oder andere benoetigte Pakete betroffen sind: ABBRECHEN.\n'
+            printf '\nAPT will remove the packages/dependencies shown above.\n'
+            printf 'If desktop, audio, Bluetooth or other required packages are affected: ABORT.\n'
             local answer=""
-            read -r -p "Zum Fortfahren exakt PURGE eingeben: " answer || answer=""
+            read -r -p "Enter PURGE exactly to continue: " answer || answer=""
             if [ "$answer" != "PURGE" ]; then
-                log_error "Vom Benutzer abgebrochen - es wurden noch keine Pakete entfernt (nur Backup erstellt)."
+                log_error "Aborted by the user - no packages have been removed yet (backup only was created)."
                 return 1
             fi
-            # Audio-Dienste des Benutzers stoppen, bevor Pakete entfernt werden
+            # Stop the user's audio services before packages are removed
             local unit
             for unit in pipewire.service pipewire.socket \
                         pipewire-pulse.service pipewire-pulse.socket \
@@ -660,92 +663,92 @@ s == "R" || s == "N" {
             done
         fi
     else
-        log_info "APT-Purge uebersprungen: keine passenden Pakete installiert."
+        log_info "APT purge skipped: no matching packages installed."
     fi
 
     # -------------------------------------------------------------------------
-    # 4. Nur exakte Dateien aus dem root-eigenen Manifest entfernen
-    #    (niemals automatisches Deinstallieren ueber das Build-Tool)
+    # 4. Remove only exact files from the root-owned manifest
+    #    (never automatic uninstall via the build tool)
     # -------------------------------------------------------------------------
     local MANIFEST="$ACTUAL_HOME/.pipewire/manifest.txt"
     if [[ -e "$MANIFEST" ]]; then
         local owner
         owner=$(stat -c '%u' "$MANIFEST" 2>/dev/null || printf 'unknown')
         if [ "$owner" != "0" ]; then
-            log_error "Manifest ist nicht root-eigen (Owner: $owner): $MANIFEST - breche ab."
+            log_error "Manifest is not root-owned (owner: $owner): $MANIFEST - aborting."
             return 1
         fi
-        log_info "Pruefe Source-Installationsmanifest: $MANIFEST"
+        log_info "Checking source installation manifest: $MANIFEST"
 
         local path
         while IFS= read -r path || [[ -n "$path" ]]; do
             [[ -z "$path" || "$path" == \#* ]] && continue
             if [[ "$path" != /* ]]; then
-                log_warn "Relativer Manifestpfad uebersprungen: $path"
+                log_warn "Relative manifest path skipped: $path"
                 continue
             fi
             if [[ "$path" == "/" ]]; then
-                log_warn "Root-Pfad im Manifest uebersprungen."
+                log_warn "Root path in the manifest skipped."
                 continue
             fi
             case "$path" in
                 /usr/*|/opt/*) ;;
                 *)
-                    log_warn "Pfad ausserhalb erlaubter Prefixe uebersprungen: $path"
+                    log_warn "Path outside allowed prefixes skipped: $path"
                     continue
                     ;;
             esac
-            # Verzeichnisse werden nie aus dem Manifest entfernt.
+            # Directories are never removed via the manifest.
             if [[ -d "$path" && ! -L "$path" ]]; then
-                log_warn "Verzeichnis wird nicht entfernt: $path"
+                log_warn "Directory will not be removed: $path"
                 continue
             fi
             if ! [[ -e "$path" || -L "$path" ]]; then
                 continue
             fi
-            # Von dpkg verwaltete Dateien bleiben APT ueberlassen.
+            # Files managed by dpkg are left to APT.
             if dpkg-query -S "$path" >/dev/null 2>&1; then
-                log_warn "Von dpkg verwaltet, bleibt erhalten: $path"
+                log_warn "Managed by dpkg, kept: $path"
                 continue
             fi
-            log_info "Source-Datei entfernen: $path"
+            log_info "Removing source file: $path"
             run_cmd_sudo "rm -f -- \"$path\""
         done < "$MANIFEST"
 
-        log_info "Manifest-Datei bleibt zur Nachvollziehbarkeit erhalten: $MANIFEST"
+        log_info "Manifest file kept for traceability: $MANIFEST"
     else
-        log_warn "Kein eigenes Installationsmanifest gefunden: $MANIFEST"
-        log_warn "Unbekannte/fruehere Source-Installationen werden NICHT automatisch geloescht."
-        log_warn "Fuer Altinstallationen zuerst Build-Verzeichnis/Prefix ermitteln und Dateien inventarisieren."
+        log_warn "No installation manifest created by this installer found: $MANIFEST"
+        log_warn "Unknown/earlier source installations will NOT be deleted automatically."
+        log_warn "For old installations, first determine the build directory/prefix and inventory the files."
     fi
 
     # -------------------------------------------------------------------------
-    # 5. Distro-Pakete per APT entfernen (nach der Manifest-Behandlung)
+    # 5. Remove distro packages via APT (after manifest handling)
     # -------------------------------------------------------------------------
     if [ "$purge_allowed" = "true" ]; then
-        log_info "Entferne Distro-Pakete via APT..."
+        log_info "Removing distro packages via APT..."
         run_cmd_sudo "apt-get purge --no-auto-remove -y ${PKGS[*]}"
     elif ((${#PKGS[@]})); then
-        log_info "APT-Purge uebersprungen (Schutzgate: Kaskade ausserhalb der PipeWire-Familien oder Simulation fehlgeschlagen)."
+        log_info "APT purge skipped (safety gate: cascade outside the PipeWire families or simulation failed)."
     else
-        log_info "Keine Distro-Pakete zu entfernen."
+        log_info "No distro packages to remove."
     fi
 
     # -------------------------------------------------------------------------
-    # 6. Konfigurationen bleiben erhalten (Standardverhalten)
+    # 6. Configurations are kept (default behavior)
     # -------------------------------------------------------------------------
-    log_info "Konfigurationen bleiben erhalten (Backup: $backup_dir, sofern angelegt)."
+    log_info "Configurations are kept (backup: $backup_dir, if created)."
 
     # -------------------------------------------------------------------------
-    # 7. Abschlusspruefung: verbliebene Dateien und Dienste
+    # 7. Final check: remaining files and services
     # -------------------------------------------------------------------------
-    log_info "Abschlusspruefung:"
+    log_info "Final check:"
     local cmd
     for cmd in pipewire pipewire-pulse wireplumber wpctl; do
         if command -v "$cmd" >/dev/null 2>&1; then
-            log_info "  Noch im PATH: $cmd -> $(command -v "$cmd")"
+            log_info "  Still in PATH: $cmd -> $(command -v "$cmd")"
         else
-            log_info "  Nicht im PATH: $cmd"
+            log_info "  Not in PATH: $cmd"
         fi
     done
 
@@ -753,19 +756,19 @@ s == "R" || s == "N" {
     for prefix in /usr/local /usr /opt; do
         count=$(find "$prefix" -name 'pipewire*' -type f 2>/dev/null | wc -l || true)
         if (( count > 0 )); then
-            log_info "  $count PipeWire-Dateien uebrig unter $prefix"
+            log_info "  $count PipeWire files remaining under $prefix"
         fi
     done
 
     run_cmd_sudo "ldconfig"
     run_as_user "systemctl --user daemon-reload >/dev/null 2>&1 || true"
-    log_success "Bereinigung abgeschlossen."
-    log_info "Pruefe die Abschlusspruefung oben, bevor die neue Installation startet."
+    log_success "Cleanup complete."
+    log_info "Review the final check above before the new installation starts."
     return 0
 }
 
 verify_installation() {
-    echo "=== Installation Verifikation ==="
+    echo "=== Installation Verification ==="
 
     pipewire --version | head -1
     wireplumber --version | head -1
@@ -776,7 +779,7 @@ verify_installation() {
     echo -e "\nServices:"
     systemctl --user is-active pipewire pipewire-pulse wireplumber | sed 's/^/  /'
 
-    echo -e "\n✅ PipeWire $(pipewire --version | awk '{print $3}') + WirePlumber $(wireplumber --version | awk '{print $3}') bereit"
+    echo -e "\n✅ PipeWire $(pipewire --version | awk '{print $3}') + WirePlumber $(wireplumber --version | awk '{print $3}') ready"
 }
 
 step_required_packages() {

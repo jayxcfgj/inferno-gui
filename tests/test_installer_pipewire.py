@@ -129,8 +129,8 @@ def test_verify_installation_defined_called_and_doc_faithful():
 
 def test_pause_prompt_from_document_present():
     content = _content()
-    assert "Bitte ALLE Audio-Apps schließen" in content
-    assert "Enter drücken wenn fertig" in content
+    assert "Please close ALL audio apps" in content
+    assert "Press Enter when done" in content
 
 
 def test_cleanup_package_detection_fresh_ubuntu():
@@ -190,7 +190,7 @@ def test_cleanup_no_manifest():
     """Test 7: Source-Installation ohne Manifest - wird inventorisiert, nicht gelöscht."""
     content = _content()
     # Verify the no-manifest branch exists
-    assert "Kein eigenes Installationsmanifest gefunden" in content or "kein eigenes Installationsmanifest gefunden" in content
+    assert "No installation manifest created by this installer found" in content
 
 
 def test_cleanup_wireplumber_lua():
@@ -212,7 +212,7 @@ def test_cleanup_user_abort():
     content = _content()
     # Verify the PURGE confirmation exists
     assert "PURGE" in content
-    assert "Zum Fortfahren exakt PURGE eingeben" in content
+    assert "Enter PURGE exactly to continue" in content
 
 
 # ---------------------------------------------------------------------------
@@ -371,9 +371,9 @@ The following packages will be REMOVED:
 def test_cleanup_gate_guards_purge():
     """Gate liegt vor dem PURGE-Prompt, Purge ist an purge_allowed gebunden, Fail-safe vorhanden."""
     body = _section("step_pipewire_cleanup() {")
-    assert body.index("gate_prog") < body.index("Zum Fortfahren exakt PURGE eingeben")
-    assert "Purge uebersprungen (Schutzgate)" in body
-    assert "Auswertung fehlgeschlagen" in body, "parse failure must fail safe (skip purge)"
+    assert body.index("gate_prog") < body.index("Enter PURGE exactly to continue")
+    assert "Purge skipped (safety gate)" in body
+    assert "Evaluation failed" in body, "parse failure must fail safe (skip purge)"
     i_purge_cmd = body.index('apt-get purge --no-auto-remove -y')
     guard_zone = body[max(0, i_purge_cmd - 400) : i_purge_cmd]
     assert 'purge_allowed" = "true"' in guard_zone, "purge command not guarded"
@@ -388,7 +388,7 @@ def test_cleanup_simulation_uses_c_locale():
 def test_cleanup_gate_fails_closed_without_removed_header():
     """Schutzgate fail-closed: fehlt der exakte REMOVED-Header in der
     LC_ALL=C apt-Ausgabe (apt hat die Sektion umformuliert), ist die
-    Auswertung unzuverlaessig -> violations = "Auswertung fehlgeschlagen"
+    Auswertung unzuverlaessig -> violations = "Evaluation failed"
     -> purge_allowed bleibt false (Fail-safe, nie purge).
 
     Extrahiert den realen Auswertungsblock aus step_pipewire_cleanup()
@@ -430,7 +430,7 @@ def test_cleanup_gate_fails_closed_without_removed_header():
         "0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded."
     )
     out = run_gate(reworded)
-    assert "Auswertung fehlgeschlagen" in out, (
+    assert "Evaluation failed" in out, (
         "missing-header must be treated as parse failure (fail-safe):\n" + out
     )
     assert "PURGE_ALLOWED=false" in out, "purge must stay blocked:\n" + out
@@ -444,7 +444,7 @@ def test_cleanup_gate_fails_closed_without_removed_header():
     )
     out = run_gate(clean)
     assert "PURGE_ALLOWED=true" in out, "clean run must allow purge:\n" + out
-    assert "Auswertung fehlgeschlagen" not in out, out
+    assert "Evaluation failed" not in out, out
 
     # 3) Positivkontrolle: exakter Header, Kaskade ausserhalb der Familien
     cascade = (
