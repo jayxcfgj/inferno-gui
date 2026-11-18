@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 
 from inferno_gui.core.app_settings import user_settings
 from inferno_gui.core.config import (
@@ -24,6 +24,11 @@ from inferno_gui.core.config import (
 from inferno_gui.core.log_parser import LogSeverity
 from inferno_gui.core.ownership import chown_qsettings
 from inferno_gui.ui.url_utils import open_url_as_user
+
+
+def _asset_icon(name: str) -> QIcon:
+    """Load a bundled asset icon; null QIcon when the asset is missing."""
+    return QIcon(str(Path(__file__).resolve().parent.parent / 'assets' / name))
 
 
 class SettingsTab(QWidget):
@@ -240,7 +245,11 @@ class SettingsTab(QWidget):
         actions_group = QGroupBox("Actions")
         actions_layout = QHBoxLayout(actions_group)
 
-        self.save_btn = QPushButton("💾 Save Configuration")
+        self.save_btn = QPushButton("Save Configuration")
+        _save_icon = _asset_icon('save.svg')
+        if not _save_icon.isNull():
+            self.save_btn.setIcon(_save_icon)
+            self.save_btn.setIconSize(QSize(16, 16))
         self.save_btn.setStyleSheet("""
             QPushButton { background-color: #4CAF50; color: white; border: none;
                           padding: 10px 20px; font-size: 13px; font-weight: bold;
@@ -250,7 +259,11 @@ class SettingsTab(QWidget):
         self.save_btn.clicked.connect(self.save_settings)
         actions_layout.addWidget(self.save_btn)
 
-        self.reset_btn = QPushButton("🔄 Reset to Defaults")
+        self.reset_btn = QPushButton("Reset to Defaults")
+        _reset_icon = _asset_icon('reset.svg')
+        if not _reset_icon.isNull():
+            self.reset_btn.setIcon(_reset_icon)
+            self.reset_btn.setIconSize(QSize(16, 16))
         self.reset_btn.setStyleSheet("""
             QPushButton { background-color: #FF9800; color: white; border: none;
                           padding: 10px 20px; font-size: 13px; border-radius: 4px; }
@@ -509,7 +522,7 @@ SystemCallFilter=@clock
             self._dirty = True
             self.dirty_changed.emit(True)
             # Visual feedback - add asterisk to save button
-            self.save_btn.setText("💾 Save Configuration*")
+            self.save_btn.setText("Save Configuration*")
             self.save_btn.setStyleSheet("""
                 QPushButton { background-color: #FF9800; color: white; border: none;
                               padding: 10px 20px; font-size: 13px; font-weight: bold;

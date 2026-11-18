@@ -44,6 +44,32 @@ def test_tool_buttons_equal_width_and_window_unchanged():
         f"tab min width grew: {ct.minimumSizeHint().width()}px != 760px"
 
 
+def test_save_reset_icons():
+    """Settings save/reset buttons carry bundled SVG icons and emoji-free labels."""
+    app = QApplication.instance() or QApplication(sys.argv)
+    from PyQt6.QtCore import QSize
+    from inferno_gui.ui.settings_tab import SettingsTab
+    st = SettingsTab()
+    app.processEvents()
+
+    for btn, label in ((st.save_btn, "Save Configuration"),
+                       (st.reset_btn, "Reset to Defaults")):
+        assert not btn.icon().isNull(), f"{label}: icon is null (missing asset?)"
+        assert btn.iconSize().width() == 16 and btn.iconSize().height() == 16, \
+            f"{label}: unexpected iconSize {btn.iconSize()}"
+        assert btn.text() == label, f"save/reset label: {btn.text()!r} != {label!r}"
+        assert "\U0001f4be" not in btn.text() and "\U0001f504" not in btn.text(), \
+            "emoji glyph still in label"
+
+    # Dirty marker: trailing '*' appended to the save label, icon preserved
+    st._mark_dirty()
+    assert st.save_btn.text() == "Save Configuration*", \
+        f"dirty label: {st.save_btn.text()!r} != 'Save Configuration*'"
+    assert not st.save_btn.icon().isNull(), "icon lost after _mark_dirty"
+    assert not st.reset_btn.icon().isNull()
+    assert st.reset_btn.text() == "Reset to Defaults"
+
+
 def test_note_moved_to_test_button_tooltip():
     app = QApplication.instance() or QApplication(sys.argv)
     from inferno_gui.ui.control_tab import ControlTab
