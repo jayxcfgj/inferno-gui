@@ -46,3 +46,4 @@ Thumbs.db
 # Superpowers SDD workspace
 .superpowers/
 superpowers/
+.worktrees/
