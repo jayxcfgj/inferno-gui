@@ -22,6 +22,7 @@ from inferno_gui.core.config import (
 )
 from inferno_gui.core.lock_gate import LockGate
 from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_log_entry
+from inferno_gui.core.ownership import chown_qsettings
 from inferno_gui.core.sync_state import display_state, light_color
 
 
@@ -487,7 +488,11 @@ class ControlTab(QWidget):
                 # Only genuine user changes persist; programmatic
                 # restores (startup, refresh) must not overwrite the
                 # saved value.
-                user_settings("control").setValue("selected_interface", iface)
+                settings = user_settings("control")
+                settings.setValue("selected_interface", iface)
+                # Running under sudo the settings file would stay
+                # root-owned; flush and hand it back to the invoking user.
+                chown_qsettings(settings)
             ip = self._interface_ips.get(iface)
             if ip:
                 self.ip_label.setText(f"IP: {ip}")
@@ -505,7 +510,11 @@ class ControlTab(QWidget):
         """Handle PTP version radio button change."""
         if checked:
             version = 'v1' if button_id == 1 else 'v2'
-            user_settings("control").setValue("ptp_version", version)
+            settings = user_settings("control")
+            settings.setValue("ptp_version", version)
+            # Running under sudo the settings file would stay
+            # root-owned; flush and hand it back to the invoking user.
+            chown_qsettings(settings)
             if self.settings_tab:
                 self.settings_tab.set_ptp_version(version)
 

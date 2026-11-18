@@ -125,6 +125,29 @@ def test_chown_called_for_saved_configs(monkeypatch, tmp_path):
         assert call.args[1:] == (_me().pw_uid, _me().pw_gid)
 
 
+def test_config_save_chowns_backup_file(monkeypatch, tmp_path):
+    """(e) InfernoConfig.save(backup=True) also hands the .asoundrc.bak
+    back: a root-owned pre-existing file keeps its ownership through the
+    rename and would otherwise stay root-owned."""
+    monkeypatch.setenv("SUDO_USER", _me().pw_name)
+
+    target = tmp_path / ".asoundrc"
+    target.write_text("pcm.inferno {}\n")
+    backup = tmp_path / ".asoundrc.bak"
+    inferno = InfernoConfig(config_path=target)
+
+    with mock.patch("os.getuid", return_value=0), \
+         mock.patch("os.chown") as chown, \
+         _root_owned_files(target, backup):
+        inferno.save()
+
+    assert chown.call_count == 2, chown.call_args_list
+    chowned = {call.args[0] for call in chown.call_args_list}
+    assert chowned == {str(target), str(backup)}
+    for call in chown.call_args_list:
+        assert call.args[1:] == (_me().pw_uid, _me().pw_gid)
+
+
 def test_noop_when_not_root(monkeypatch, tmp_path):
     """(b) Not running as root: saves happen normally, no chown is attempted."""
     monkeypatch.setenv("SUDO_USER", _me().pw_name)
@@ -261,6 +284,31 @@ def test_main_window_state_save_chowns_qsettings_file(monkeypatch, tmp_path):
     assert chown.call_count == 1, chown.call_args_list
     assert chown.call_args.args[0] == str(conf.fileName())
     mw.hide()
+
+
+def test_control_tab_writes_chown_qsettings_file(monkeypatch, tmp_path):
+    """(f) ControlTab's direct QSettings writes — a genuine interface
+    change and a PTP version toggle — end with the settings file handed
+    back to the invoking user (programmatic restores write nothing)."""
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("SUDO_USER", _me().pw_name)
+    _fake_interfaces(monkeypatch, ["eth0"])
+
+    from inferno_gui.ui.control_tab import ControlTab
+    ct = ControlTab()
+    conf = user_settings("control")
+
+    with mock.patch("os.getuid", return_value=0), \
+         mock.patch("os.chown") as chown, \
+         _root_owned_files(conf.fileName()):
+        ct._on_interface_changed(ct.interface_combo.currentIndex())
+        ct._on_ptp_version_toggled(1, True)
+
+    assert chown.call_count == 2, chown.call_args_list
+    chowned = {call.args[0] for call in chown.call_args_list}
+    assert chowned == {str(conf.fileName())}
+    for call in chown.call_args_list:
+        assert call.args[1:] == (_me().pw_uid, _me().pw_gid)
 
 
 # ---------------------------------------------------------------------------

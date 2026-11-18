@@ -4,8 +4,9 @@ The GUI must run under sudo for PTP hardware timestamping, so every file
 it writes (~/.asoundrc, the statime TOMLs, the QSettings files under
 .config/InfernoGUI) would end up owned by root — and the invoking user
 could no longer edit them in a normal, non-sudo run.  Both config
-save() paths and every QSettings write therefore hand their files back
-to the user sudo launched the process for.
+save() paths (the .asoundrc.bak backup included) and every QSettings
+write therefore hand their files back to the user sudo launched the
+process for.
 """
 import logging
 import os

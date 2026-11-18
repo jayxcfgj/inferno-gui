@@ -78,16 +78,19 @@ class InfernoConfig:
     
     def save(self, backup: bool = True):
         """Save configuration to .asoundrc."""
+        from inferno_gui.core.ownership import chown_to_invoking_user
         if backup and os.path.exists(self.config_path):
             backup_path = self.config_path.with_suffix(self.config_path.suffix + '.bak')
             os.rename(self.config_path, backup_path)
+            # A pre-existing root-owned file keeps its ownership through
+            # the rename; hand the backup back too.
+            chown_to_invoking_user(backup_path)
         
         content = self._generate_asoundrc()
         with open(self.config_path, 'w') as f:
             f.write(content)
         # Running under sudo the file lands root-owned; hand it back to
         # the user the GUI was launched for.
-        from inferno_gui.core.ownership import chown_to_invoking_user
         chown_to_invoking_user(self.config_path)
         self._loaded = True
     
