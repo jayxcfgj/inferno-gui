@@ -2,8 +2,7 @@
 
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap, QDesktopServices
-from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QFont, QPixmap
 from pathlib import Path
 
 from inferno_gui.core.version import (
@@ -14,12 +13,27 @@ from inferno_gui.core.version import (
     __author__,
     __inferno_author__,
 )
+from inferno_gui.ui.url_utils import open_url_as_user
+
+# Label → repo URL for the link buttons.  They open via
+# open_url_as_user (the GUI runs as root; QDesktopServices would
+# launch the browser in root's session, where nothing opens).
+_GITHUB_LINKS = (
+    ('Inferno GitHub', 'https://github.com/teodly/inferno'),
+    ('Statime GitHub', 'https://github.com/teodly/statime'),
+    ('Inferno GUI GitHub', 'https://github.com/jayxcfgj/inferno-gui'),
+)
 
 
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Path of the header image that actually loaded (svg preferred,
+        # png fallback, None = text placeholder).  Set by _load_header_pixmap.
+        self.header_source = None
         self.setWindowTitle(f'About {__app_name__}')
+        # 460 wide fits the three GitHub buttons on one row
+        # (row size hint ≈ 395 px, centered, right edge ≈ 428 px).
         self.setFixedSize(460, 520)
         self.setStyleSheet("""
             QDialog { background-color: #2b2b2b; color: #e0e0e0; }
@@ -33,16 +47,31 @@ class AboutDialog(QDialog):
         """)
         self._init_ui()
 
+    def _load_header_pixmap(self):
+        """Load the header image: SVG first, then PNG, else None.
+
+        QPixmap renders SVGs through the QtSvg image-format plugin, so
+        one loader covers both files; the PNG stays as a fallback for
+        systems without that plugin.
+        """
+        assets = Path(__file__).parent.parent / 'assets'
+        for name in ('about_header.svg', 'about_header.png'):
+            pixmap = QPixmap(str(assets / name))
+            if not pixmap.isNull():
+                self.header_source = assets / name
+                return pixmap
+        return None
+
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(8)
 
-        # Hero image / logo area
-        img_path = str(Path(__file__).parent.parent / 'assets' / 'about_header.png')
-        pixmap = QPixmap(img_path)
-        if not pixmap.isNull():
+        # Hero image / logo area (SVG via QtSvg, PNG fallback, text last)
+        pixmap = self._load_header_pixmap()
+        if pixmap is not None:
             img = QLabel()
+            img.setObjectName('aboutHeader')
             img.setPixmap(pixmap.scaled(
                 400, 160, Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
@@ -99,22 +128,17 @@ class AboutDialog(QDialog):
 
         layout.addSpacing(10)
 
-        # Links
+        # Links — open on the invoking user's desktop, not in root's session
         links_layout = QHBoxLayout()
         links_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        inferno_link = QPushButton('Inferno GitHub')
-        inferno_link.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl('https://github.com/teodly/inferno')
-        ))
-        links_layout.addWidget(inferno_link)
-        
-        statime_link = QPushButton('Statime GitHub')
-        statime_link.clicked.connect(lambda: QDesktopServices.openUrl(
-            QUrl('https://github.com/teodly/statime')
-        ))
-        links_layout.addWidget(statime_link)
-        
+
+        for label, url in _GITHUB_LINKS:
+            link = QPushButton(label)
+            link.clicked.connect(
+                lambda _checked=False, u=url: open_url_as_user(u)
+            )
+            links_layout.addWidget(link)
+
         layout.addLayout(links_layout)
 
         layout.addSpacing(10)
