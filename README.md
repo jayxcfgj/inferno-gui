@@ -8,8 +8,8 @@ A Linux desktop application for easy installing and managing **Inferno** – a D
 - **PTP Clock Control**: Start/stop statime (PTPv1/PTPv2) with live filtered log output
 - **Interface Selection**: Dropdown with available network interfaces and IP display
 - **Audio Configuration**: Sample rate, TX/RX channels, device name, bind IP
-- **Real-time Status**: Sync traffic light (green ≤200ns, yellow ≤1000ns, red) with offset/frequency display
-- **Log Filtering**: Reduces verbose statime output to ~1 line/second with key metrics
+- **Real-time Status**: Sync traffic light (green ≤200ns, yellow ≤1000ns, red) with offset/frequency display; the window/taskbar and tray icon follow the sync state (green = locked, yellow = syncing, black = uncalibrated/stopped)
+- **Log Filtering**: Reduces verbose statime output to ~1 line/second with key metrics (state shown as it is displayed, e.g. "Locked" or "Uncalibrated")
 - **System Tray**: Minimize to tray, quick start/stop from tray menu
 - **NetAudio Integration**: One-click launch of Dante web routing interface
 - **Settings Persistence**: Remembers interface, PTP version, audio parameters
@@ -48,6 +48,8 @@ Run the provided installation script:
 ```bash
 sudo ./install_inferno.sh
 ```
+
+> **Why our Inferno fork is used:** the installer clones [jayxcfgj/inferno](https://github.com/jayxcfgj/inferno) (branch `fix/arc-rx-paging-netaudio`) instead of the upstream repository. The fork carries a patch that makes Inferno fully usable from the [netaudio](https://github.com/chris-ritsen/network-audio-controller) web routing UI (legacy ARC channel pages ≤ 16 entries, channel lists independent of a running receiver, reliable subscription replies) and hardens the control protocol against malformed packets. The same problem is already being addressed upstream in [teodly/inferno#56](https://github.com/teodly/inferno/pull/56); once that PR is merged into the original repository, this installer will switch back to `teodly/inferno`.
 
 This script will:
 - Update system and install dependencies
@@ -92,7 +94,7 @@ sudo python3 -m inferno_gui
 
 3. **Start PTP** (Control tab):
    - Click **START PTP** to launch statime
-   - Watch the sync indicator: green = excellent (≤200ns), yellow = good (≤1000ns), red = poor
+   - Watch the sync indicator: green = locked (≤200ns), yellow = syncing (≤1000ns), red = uncalibrated (>1000ns); the tray icon mirrors this (green/yellow/black)
    - View filtered log output (1 line/sec with offset/freq/state)
 
 4. **Use Inferno**:
