@@ -847,6 +847,13 @@ step_build_statime_inferno() {
         log_error "statime build failed - binary not found"
         exit 1
     fi
+    
+    # Hand the cloned and built tree back to the invoking user
+    # (this script runs as root under sudo).
+    if [ "$TEST_MODE" = false ] && [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+        log_info "Fixing ownership of $WORK_DIR (user $SUDO_USER_VAL)..."
+        chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$WORK_DIR" 2>/dev/null || true
+    fi
 }
 
 step_network_interface() {
@@ -1011,6 +1018,13 @@ step_build_inferno_plugin() {
         log_error "inferno plugin build failed - binary not found at $plugin_path"
         exit 1
     fi
+    
+    # The plugin build also writes into $INFERNO_DIR as root; hand the
+    # work tree back to the invoking user.
+    if [ "$TEST_MODE" = false ] && [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+        log_info "Fixing ownership of $WORK_DIR (user $SUDO_USER_VAL)..."
+        chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$WORK_DIR" 2>/dev/null || true
+    fi
 }
 
 step_install_alsa_plugin() {
@@ -1139,6 +1153,15 @@ EOF
     
     log_success "Created $ASOUNDRC"
     log_info "You can modify this file later to change audio parameters."
+    
+    # Hand the written config back to the invoking user; the work tree
+    # also picked up root-owned files since the build steps (interface
+    # selection, statime TOML edits, start script).
+    if [ "$TEST_MODE" = false ] && [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+        log_info "Fixing ownership of $ASOUNDRC and $WORK_DIR (user $SUDO_USER_VAL)..."
+        chown "$SUDO_USER_VAL:$SUDO_USER_VAL" "$ASOUNDRC" 2>/dev/null || true
+        chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$WORK_DIR" 2>/dev/null || true
+    fi
 }
 
 step_configure_pipewire() {

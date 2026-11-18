@@ -85,6 +85,10 @@ class InfernoConfig:
         content = self._generate_asoundrc()
         with open(self.config_path, 'w') as f:
             f.write(content)
+        # Running under sudo the file lands root-owned; hand it back to
+        # the user the GUI was launched for.
+        from inferno_gui.core.ownership import chown_to_invoking_user
+        chown_to_invoking_user(self.config_path)
         self._loaded = True
     
     def _generate_asoundrc(self) -> str:
@@ -168,6 +172,10 @@ class StatimeConfig:
         """Save configuration to TOML file."""
         with open(self.config_path, 'wb') as f:
             tomli_w.dump(self._data, f)
+        # Running under sudo the file lands root-owned; hand it back to
+        # the user the GUI was launched for.
+        from inferno_gui.core.ownership import chown_to_invoking_user
+        chown_to_invoking_user(self.config_path)
         self._loaded = True
     
     def get(self, key: str, default: Any = None) -> Any:

@@ -19,6 +19,7 @@ from inferno_gui.core.version import (
     __author__,
 )
 from inferno_gui.core.app_settings import user_settings
+from inferno_gui.core.ownership import chown_qsettings
 from inferno_gui.core.sync_state import display_state, tray_state
 from inferno_gui.ui.control_tab import ControlTab
 from inferno_gui.ui.settings_tab import SettingsTab
@@ -306,6 +307,9 @@ class MainWindow(QMainWindow):
         settings = user_settings("window")
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
+        # Running under sudo the settings file would stay root-owned;
+        # flush and hand it back to the invoking user.
+        chown_qsettings(settings)
 
     def closeEvent(self, event):
         """Handle close event - minimize to tray instead of quitting."""

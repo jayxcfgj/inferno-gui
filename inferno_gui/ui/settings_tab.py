@@ -22,6 +22,7 @@ from inferno_gui.core.config import (
     get_work_dir,
 )
 from inferno_gui.core.log_parser import LogSeverity
+from inferno_gui.core.ownership import chown_qsettings
 from inferno_gui.ui.url_utils import open_url_as_user
 
 
@@ -583,6 +584,9 @@ SystemCallFilter=@clock
         settings.setValue("announce_interval", self.announce_interval.value())
         # Locked to trace (user-approved decision).
         settings.setValue("log_level", "TRACE")
+        # Running under sudo the settings file would stay root-owned;
+        # flush and hand it back to the invoking user.
+        chown_qsettings(settings)
 
         # Update statime configs with advanced settings
         self._update_statime_configs()
