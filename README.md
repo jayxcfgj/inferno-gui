@@ -12,6 +12,7 @@ A Linux desktop application for easy installing and managing **Inferno** – a D
 - **Log Filtering**: Reduces verbose statime output to ~1 line/second with key metrics (state shown as it is displayed, e.g. "Locked" or "Uncalibrated")
 - **System Tray**: Minimize to tray, quick start/stop from tray menu
 - **NetAudio Integration**: One-click launch of Dante web routing interface
+- **Automatic PipeWire node creation**: Once PTP is locked, the GUI creates the Inferno sink and source nodes inside PipeWire, so audio routing happens within the PipeWire graph (e.g. via qpwgraph)
 - **Settings Persistence**: Remembers interface, PTP version, audio parameters
 - **About Dialog**: Credits for Inferno/statime (by teodly) and GUI (MIT licensed)
 
@@ -98,9 +99,9 @@ sudo python3 -m inferno_gui
    - View filtered log output (1 line/sec with offset/freq/state)
 
 4. **Use Inferno**:
-   - The ALSA plugin activates automatically when an app opens the "inferno" PCM device
-   - In your DAW/audio software, select "Inferno" as audio device
-   - Route audio via **NetAudio Web UI** (button in Control tab or tray menu)
+   - Once PTP is synced ("Locked"), the GUI automatically creates the **Inferno sink** and **Inferno source** nodes inside PipeWire
+   - Route audio within PipeWire: connect the Inferno nodes to your audio software using any PipeWire patchbay (e.g. **qpwgraph**, launchable from the Control tab)
+   - Dante-side routing (which Dante device talks to Inferno) via **NetAudio Web UI** (button in Control tab or tray menu)
 
 5. **System Tray**:
    - Close window → minimizes to tray (PTP keeps running)
