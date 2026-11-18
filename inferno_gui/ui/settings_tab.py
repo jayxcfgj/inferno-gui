@@ -146,7 +146,14 @@ class SettingsTab(QWidget):
         self.log_level = QComboBox()
         for level in ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"]:
             self.log_level.addItem(level)
-        self.log_level.setCurrentText("INFO")
+        # Log level is locked to TRACE: the log parser and PipeWire node
+        # automation only work with trace level (user-approved decision).
+        self.log_level.setCurrentText("TRACE")
+        self.log_level.setToolTip(
+            "The log parser and PipeWire node automation require trace level; "
+            "changing it would break status display and node creation."
+        )
+        self._lock_log_level()
         adv_layout.addRow("Log Level:", self.log_level)
 
         layout.addWidget(adv_group)
@@ -436,6 +443,12 @@ SystemCallFilter=@clock
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to test ALSA: {e}")
 
+    def _lock_log_level(self):
+        """Log level is locked to TRACE: the log parser and PipeWire node
+        automation require trace level (user-approved decision)."""
+        self.log_level.setCurrentText("TRACE")
+        self.log_level.setEnabled(False)
+
     def load_settings(self):
         """Load settings from config files and QSettings."""
         settings = user_settings("control")  # Use same group as control tab
@@ -469,7 +482,8 @@ SystemCallFilter=@clock
         self.ptp_domain.setValue(settings.value("ptp_domain", 0, type=int))
         self.sync_interval.setValue(settings.value("sync_interval", 0, type=int))
         self.announce_interval.setValue(settings.value("announce_interval", 1, type=int))
-        self.log_level.setCurrentText(settings.value("log_level", "INFO", type=str))
+        # Locked to trace: never restore a stored level (user-approved decision).
+        self._lock_log_level()
 
     def _capture_original_values(self):
         """Capture current values as baseline for dirty tracking."""
@@ -567,10 +581,14 @@ SystemCallFilter=@clock
         settings.setValue("ptp_domain", self.ptp_domain.value())
         settings.setValue("sync_interval", self.sync_interval.value())
         settings.setValue("announce_interval", self.announce_interval.value())
-        settings.setValue("log_level", self.log_level.currentText())
-        
+        # Locked to trace (user-approved decision).
+        settings.setValue("log_level", "TRACE")
+
         # Update statime configs with advanced settings
         self._update_statime_configs()
+
+        # Re-assert the lock: save must never leave log_level editable.
+        self._lock_log_level()
         
         # Notify control tab
         if self.control_tab:
@@ -618,11 +636,11 @@ SystemCallFilter=@clock
                             cfg.set('global.domain', self.ptp_domain.value())
                         
                         if cfg.get('loglevel') is not None:
-                            cfg.set('loglevel', self.log_level.currentText().lower())
+                            cfg.set('loglevel', "trace")
                         elif cfg.get('global.log_level') is not None:
-                            cfg.set('global.log_level', self.log_level.currentText().lower())
+                            cfg.set('global.log_level', "trace")
                         else:
-                            cfg.set('log_level', self.log_level.currentText().lower())
+                            cfg.set('log_level', "trace")
                         
                         # Port settings - use hyphenated names as statime expects
                         cfg.set('port[0].sync-interval', self.sync_interval.value())
@@ -647,7 +665,7 @@ SystemCallFilter=@clock
             self.ptp_domain.setValue(0)
             self.sync_interval.setValue(0)
             self.announce_interval.setValue(1)
-            self.log_level.setCurrentText("INFO")
+            self._lock_log_level()
             self.ptp_v2_radio.setChecked(True)
             self.save_settings()
 
@@ -666,11 +684,14 @@ SystemCallFilter=@clock
 
     def set_running_state(self, running: bool):
         """Disable/enable settings when inferno is running."""
-        # Only update if state actually changes (idempotent)
+        # Only update if state actually changes (idempotent).  When inferno
+        # is running the widgets must be disabled, so the target state is
+        # `not running` — the old guard compared against `running` itself
+        # and returned early on the exact call that needed to disable.
         current_enabled = self.iface_combo.isEnabled()
-        if current_enabled == running:
+        if current_enabled == (not running):
             return  # Already in correct state
-            
+
         enabled = not running
         self.iface_combo.setEnabled(enabled)
         self.refresh_iface_btn.setEnabled(enabled)
@@ -683,7 +704,7 @@ SystemCallFilter=@clock
         self.ptp_domain.setEnabled(enabled)
         self.sync_interval.setEnabled(enabled)
         self.announce_interval.setEnabled(enabled)
-        self.log_level.setEnabled(enabled)
+        # log_level stays disabled in every state (locked to trace).
         self.save_btn.setEnabled(enabled)
         self.reset_btn.setEnabled(enabled)
         

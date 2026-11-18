@@ -906,7 +906,7 @@ create_statime_config() {
 [global]
 domain = 0
 interface = "eth0"
-log_level = "info"
+log_level = "trace"
 
 [port]
 sync_interval = 0
@@ -922,7 +922,7 @@ TOMLEOF
 [global]
 domain = 0
 interface = "eth0"
-log_level = "info"
+log_level = "trace"
 two_step_flag = true
 
 [port]
