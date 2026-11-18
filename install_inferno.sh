@@ -826,12 +826,12 @@ step_build_statime_inferno() {
     fi
     run_cmd "git clone --recurse-submodules -b inferno-dev https://github.com/teodly/statime \"$STATIME_DIR\""
     
-    log_info "Cloning inferno..."
+    log_info "Cloning inferno (jayxcfgj fork, fix/arc-rx-paging-netaudio branch)..."
     if [ "$TEST_MODE" = false ] && [ -d "$INFERNO_DIR" ]; then
         log_info "Removing existing inferno directory..."
         rm -rf "$INFERNO_DIR"
     fi
-    run_cmd "git clone --recursive https://github.com/teodly/inferno \"$INFERNO_DIR\""
+    run_cmd "git clone --recursive -b fix/arc-rx-paging-netaudio https://github.com/jayxcfgj/inferno \"$INFERNO_DIR\""
     
     log_step "Building statime..."
     run_cmd "cd \"$STATIME_DIR\" && cargo build"
