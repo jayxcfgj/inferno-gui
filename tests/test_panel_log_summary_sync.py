@@ -117,3 +117,42 @@ def test_raw_mode_panel_shows_live_values(monkeypatch):
     ct._update_status_panel()
     assert ct.ptp_offset_label.text() == "Offset: -1000 ns"
     assert ct.ptp_freq_label.text() == "Freq: 7777 ppb"
+
+
+EST_5000 = EST.replace("offset -123.45", "offset 5000.0")
+
+
+def test_red_state_label_says_uncalibrated(monkeypatch):
+    """SLAVE + Offset 5000 ns: State-Label 'State: Uncalibrated', Ampel
+    rot mit dem Text 'Uncalibrated (5000 ns)' - Mapping aus sync_state
+    (alt: 'State: SLAVE' / 'SLAVE (5000 ns)')."""
+    from test_lock_gate_wiring import _make_tab
+
+    ct, _ = _make_tab(monkeypatch)
+    ct.parser._last_summary_time = 0.0
+    ct._process_log_output(TRANS_SLAVE + "\n")
+    ct._process_log_output(EST_5000 + "\n")       # Summary: offset 5000 ns
+    ct._update_status_panel()
+    assert ct.ptp_state_label.text() == "State: Uncalibrated"
+    assert ct.sync_label.text() == "Uncalibrated (5000 ns)"
+    assert "#f44336" in ct.sync_light.styleSheet()   # rot
+
+
+def test_title_uses_display_label():
+    """Fenstertitel nutzt das Display-Label aus sync_state ('PTP:
+    Uncalibrated ...') statt des Raw-States ('PTP: SLAVE ...')."""
+    from test_lock_gate_wiring import _get_app
+
+    _get_app()
+    from inferno_gui.ui.main_window import MainWindow
+
+    mw = MainWindow()
+    mw._inferno_running = True
+    ct = mw.control_tab
+    ct.parser._last_summary_time = 0.0
+    ct._process_log_output(TRANS_SLAVE + "\n")
+    ct._process_log_output(EST_5000 + "\n")       # Summary: offset 5000 ns
+    ct._update_status_panel()
+    mw._update_window_title()
+    assert "PTP: Uncalibrated (5000ns)" in mw.windowTitle()
+    mw.hide()

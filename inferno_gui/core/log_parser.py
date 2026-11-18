@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, List
 from enum import Enum
 
+from inferno_gui.core.sync_state import display_state
+
 
 class LogSeverity(Enum):
     INFO = "info"
@@ -157,16 +159,19 @@ class StatimeLogParser:
     
     def _create_summary_entry(self, base_entry: ParsedLogEntry) -> ParsedLogEntry:
         """Create a summary line with key metrics."""
+        offset_ns = (base_entry.offset_ns if base_entry.offset_ns is not None
+                     else self._pending_metrics.get('offset_ns'))
         parts = []
-        
+
         if self._last_state:
-            parts.append(f"state={self._last_state}")
-        
-        if base_entry.offset_ns is not None:
-            parts.append(f"offset={base_entry.offset_ns}ns")
-        elif self._pending_metrics.get('offset_ns') is not None:
-            parts.append(f"offset={self._pending_metrics['offset_ns']}ns")
-        
+            # Display-Label aus sync_state - dieselbe Mapping-Quelle wie
+            # Control-Tab und Fenstertitel; der Raw-State bleibt am
+            # Entry-Objekt erhalten (state=..., kein Offset-Suffix).
+            parts.append(f"state={display_state(self._last_state, offset_ns)}")
+
+        if offset_ns is not None:
+            parts.append(f"offset={offset_ns}ns")
+
         if base_entry.freq_ppb is not None:
             parts.append(f"freq={base_entry.freq_ppb}ppb")
         elif self._pending_metrics.get('freq_ppb') is not None:

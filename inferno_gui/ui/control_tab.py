@@ -21,6 +21,7 @@ from inferno_gui.core.config import (
 )
 from inferno_gui.core.lock_gate import LockGate
 from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_log_entry
+from inferno_gui.core.sync_state import display_state, light_color
 
 
 def _get_pipewire_env() -> dict:
@@ -969,7 +970,7 @@ class ControlTab(QWidget):
                 self._lock_wait_ticks += 1
                 if self._lock_wait_ticks >= 20:
                     self._append_log(
-                        f"still waiting for lock: state={status['state']}, offset={status['offset_ns']} ns"
+                        f"still waiting for lock: state={display_state(status['state'], status['offset_ns'])}, offset={status['offset_ns']} ns"
                     )
                     self._lock_wait_ticks = 0
 
@@ -977,19 +978,11 @@ class ControlTab(QWidget):
         self._ptp_offset = display_offset
         self._ptp_freq = display_freq
         
-        # Update labels - show sync quality based on offset
-        state = status['state']
-        offset = status['offset_ns']
-        if state == 'SLAVE' and offset is not None:
-            if abs(offset) <= 200:
-                display_state = "Locked"
-            elif abs(offset) <= 1000:
-                display_state = "Syncing..."
-            else:
-                display_state = "SLAVE"
-        else:
-            display_state = state
-        self.ptp_state_label.setText(f"State: {display_state}")
+        # Update labels - show sync quality based on offset. Mapping aus
+        # sync_state (Single Source of Truth, identisch zum Log-Summary
+        # und Fenstertitel); State und Offset bleiben live.
+        self.ptp_state_label.setText(
+            f"State: {display_state(status['state'], status['offset_ns'])}")
         
         if display_offset is not None:
             self.ptp_offset_label.setText(f"Offset: {display_offset} ns")
@@ -1015,37 +1008,33 @@ class ControlTab(QWidget):
         state = status['state']
         offset = status['offset_ns']
         
+        # Farbe aus der gemeinsamen Mapping-Quelle (sync_state) - identisch
+        # zu State-Label, Log-Summary und Fenstertitel.
+        color = light_color(state, offset)
+        
         if state == 'MASTER':
-            color = "#2196F3"
             label = "Grand Master"
             tip = "Grand Master – no PTP peer detected"
         elif state == 'FAULTY':
-            color = "#f44336"
             label = "FAULTY"
             tip = "FAULTY – link or PTP error"
         elif state == 'LISTENING':
-            color = "gray"
             label = "Listening..."
             tip = "Listening for PTP messages..."
         elif state == 'UNCALIBRATED':
-            color = "orange"
             label = "Uncalibrated"
             tip = "Uncalibrated – acquiring sync"
         elif state == 'SLAVE' and offset is not None:
             if abs(offset) <= 200:
-                color = "#4caf50"
                 label = f"Locked ({abs(offset)} ns)"
                 tip = f"Sync: {offset}ns (excellent)"
             elif abs(offset) <= 1000:
-                color = "#ffc107"
                 label = f"Syncing... ({abs(offset)} ns)"
                 tip = f"Sync: {offset}ns (good)"
             else:
-                color = "#f44336"
-                label = f"SLAVE ({abs(offset)} ns)"
+                label = f"Uncalibrated ({abs(offset)} ns)"
                 tip = f"Sync: {offset}ns (poor)"
         else:
-            color = "gray"
             label = "Initializing..."
             tip = "Waiting for sync..."
         

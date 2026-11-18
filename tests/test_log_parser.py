@@ -100,3 +100,18 @@ def test_summary_entry_keeps_zero_offset():
     zero = EST.replace("offset -123.45", "offset 0")
     e = p.parse_line(zero)
     assert e.offset_ns == 0                            # alt: `0 or pending` → -123
+
+
+EST_5000 = EST.replace("offset -123.45", "offset 5000.0")
+
+
+def test_summary_state_uses_display_label():
+    """Summary-Zeile zeigt das Display-Label aus sync_state (state=
+    Uncalibrated, alt: state=SLAVE) - derselbe Text wie im Control-Tab.
+    Der Raw-State bleibt unveraendert am Entry-Objekt fuer Consumer."""
+    p = StatimeLogParser(filter_interval=0.0)
+    p.parse_line(TRANS_SLAVE)
+    e = p.parse_line(EST_5000)
+    assert e is not None
+    assert "state=Uncalibrated" in e.message
+    assert e.state == "SLAVE"      # Raw-State bleibt am Entry fuer Consumer

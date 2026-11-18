@@ -163,7 +163,7 @@ def test_no_lock_keeps_waiting_and_logs(monkeypatch):
     ct._update_status_panel()  # 20. Tick = 10 s
     assert created == []
     assert ct._awaiting_lock is True
-    assert ("still waiting for lock: state=LISTENING, offset=None ns"
+    assert ("still waiting for lock: state=Listening..., offset=None ns"
             ) in ct.terminal_output.toPlainText()
 
 
@@ -280,9 +280,9 @@ def test_sync_light_bucket_uses_magnitude(monkeypatch):
     monkeypatch.setattr(ct.parser, "get_sync_status",
                         lambda: {'state': 'SLAVE', 'offset_ns': -5000, 'freq_ppb': None})
     ct._update_status_panel()
-    assert ct.sync_label.text() == "SLAVE (5000 ns)"          # Magnitude im Bucket
+    assert ct.sync_label.text() == "Uncalibrated (5000 ns)"   # Magnitude im Bucket
     assert ct.ptp_offset_label.text() == "Offset: -5000 ns"    # Vorzeichen im Label
-    assert ct.ptp_state_label.text() == "State: SLAVE"         # nicht "Locked"
+    assert ct.ptp_state_label.text() == "State: Uncalibrated"  # nicht "Locked"
 
 def test_sync_light_locked_bucket_with_small_negative_offset(monkeypatch):
     ct, _ = _make_tab(monkeypatch)

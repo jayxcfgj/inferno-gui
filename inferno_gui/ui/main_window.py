@@ -18,6 +18,7 @@ from inferno_gui.core.version import (
     __license__,
     __author__,
 )
+from inferno_gui.core.sync_state import display_state
 from inferno_gui.ui.control_tab import ControlTab
 from inferno_gui.ui.settings_tab import SettingsTab
 from inferno_gui.ui.about_dialog import AboutDialog
@@ -250,15 +251,16 @@ class MainWindow(QMainWindow):
             self.tray_icon.setToolTip(f"{__app_name__} - Stopped")
 
     def _update_window_title(self):
-        """Update window title with status."""
+        """Update window title with status (Display-Label via sync_state)."""
         if self._inferno_running:
             ptp_status = self.control_tab.get_ptp_status()
             state = ptp_status.get('state', 'RUNNING')
             offset = ptp_status.get('offset')
+            display = display_state(state, offset)
             if offset is not None:
-                self.setWindowTitle(f"{__app_name__} v{__version__} - PTP: {state} ({offset}ns)")
+                self.setWindowTitle(f"{__app_name__} v{__version__} - PTP: {display} ({offset}ns)")
             else:
-                self.setWindowTitle(f"{__app_name__} v{__version__} - PTP: {state}")
+                self.setWindowTitle(f"{__app_name__} v{__version__} - PTP: {display}")
         else:
             self.setWindowTitle(f"{__app_name__} v{__version__}")
 
