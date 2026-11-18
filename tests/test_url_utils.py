@@ -5,10 +5,11 @@ user's desktop session, not in root's.
 The GUI runs as root (PTP hardware timestamping needs it), so
 QDesktopServices.openUrl launches a browser in root's environment
 (HOME=/root, no session bus) and silently discards the boolean result.
-open_url_as_user() delegates to `sudo -u <user> xdg-open <url>` — the
-pattern that already works for control_tab's NetAudio launcher — and
-forwards the user's session environment (run_gui.sh exports it before
-sudo'ing the GUI).
+open_url_as_user() delegates to `sudo -u <user> env K=V ... xdg-open
+<url>`: the session environment rides as target-side env command
+arguments (sudo env_reset would strip it from sudo's own environment),
+and keys missing entirely — direct `sudo inferno-gui` bypasses
+run_gui.sh's env reconstruction — get UID-derived defaults.
 
 Run: QT_QPA_PLATFORM=offscreen python -m pytest tests/test_url_utils.py -v
 """
@@ -50,8 +51,9 @@ def _capture_start_detached(monkeypatch, ok=True):
     mitschneiden.
 
     Liefert eine Liste von (program, arguments, env-dict)-Tupeln; das
-    env-dict spiegelt die QProcessEnvironment, die der Helfer für den
-    Kind-Prozess gesetzt hat (alles, was sudo sehen soll).
+    env-dict spiegelt die QProcessEnvironment des Kind-Prozesses (die
+    Session-Env reist inzwischen als Ziel-Seiten-`env KEY=value`-Argumente
+    in arguments, nicht mehr über die Prozess-Umgebung).
     """
     captured = []
 
@@ -89,19 +91,52 @@ def test_builds_sudo_command_with_session_env(qt_offscreen, monkeypatch):
     monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
     monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.delenv("XAUTHORITY", raising=False)
 
     captured = _capture_start_detached(monkeypatch)
     url = "https://github.com/teodly/inferno"
     open_url_as_user(url)
 
     assert len(captured) == 1, "exactly one detached launch per call"
-    program, args, env = captured[0]
+    program, args, _env = captured[0]
     assert program == "sudo"
-    assert args == ["-u", "jacob", "xdg-open", url]
-    # Session-Env wird weitergereicht — aber nur die gesetzten Session-Keys
-    assert env.get("XDG_RUNTIME_DIR") == "/run/user/1000"
-    assert env.get("DBUS_SESSION_BUS_ADDRESS") == "unix:path=/run/user/1000/bus"
-    assert "DISPLAY" not in env, "unset session keys must not be forwarded"
+    # Session-Env reist als Ziel-Seiten-`env KEY=value`-Argumente — sudo
+    # env_reset entfernt sie auf dem Weg über sudo's eigene Umgebung.
+    # Nur gesetzte Session-Keys werden weitergereicht (kein DISPLAY=...).
+    assert args == [
+        "-u", "jacob", "env",
+        "XDG_RUNTIME_DIR=/run/user/1000",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+        "xdg-open", url,
+    ]
+
+
+# ── (a2) UID-abgeleitete Defaults bei fehlender Session-Env ───────
+def test_env_args_fall_back_to_target_uid(qt_offscreen, monkeypatch):
+    """Direkter Start per `sudo inferno-gui` (ohne run_gui.sh) kann die
+    Session-Variablen komplett missen: die Ziel-Seiten-Env bekommt dann
+    UID-abgeleitete Defaults, damit xdg-open Runtime-Dir und Session-Bus
+    trotzdem findet."""
+    me = pwd.getpwuid(os.getuid())
+    monkeypatch.setenv("SUDO_USER", me.pw_name)
+    for key in ("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
+                "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY"):
+        monkeypatch.delenv(key, raising=False)
+
+    captured = _capture_start_detached(monkeypatch)
+    url = "https://example.com/"
+    open_url_as_user(url)
+
+    assert len(captured) == 1
+    _, args, _ = captured[0]
+    assert f"XDG_RUNTIME_DIR=/run/user/{me.pw_uid}" in args
+    assert f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{me.pw_uid}/bus" in args
+    # Keys ohne UID-Default bleiben vollständig weg
+    assert not any(a.startswith(("DISPLAY=", "WAYLAND_DISPLAY=", "XAUTHORITY="))
+                   for a in args)
+    xdg = args.index("xdg-open")
+    assert args[xdg + 1] == url
 
 
 # ── (b) User-Auflösung ohne SUDO_USER ──────────────────────────────
@@ -132,6 +167,16 @@ def test_start_detached_failure_is_safe(qt_offscreen, monkeypatch, caplog):
         "the warning must name the URL that failed to open"
 
 
+def _assert_opens_as_user(args, user, target):
+    """Gemeinsame Form eines Helfer-Starts: `sudo -u <user> env ...
+    xdg-open <target>` — die env-Argumente variieren mit der Umgebung,
+    deshalb positionsunabhängig prüfen."""
+    assert args[:2] == ["-u", user]
+    assert "env" in args, "env assignments must ride as command arguments"
+    xdg = args.index("xdg-open")
+    assert args[xdg + 1] == target
+
+
 # ── (d) Settings-Buttons lösen gegen das echte User-Home auf ──────
 def test_open_pipe_wire_override_uses_user_home(qt_offscreen, monkeypatch, tmp_path):
     from inferno_gui.ui.settings_tab import SettingsTab
@@ -152,9 +197,8 @@ def test_open_pipe_wire_override_uses_user_home(qt_offscreen, monkeypatch, tmp_p
     assert len(captured) == 1
     program, args, _env = captured[0]
     assert program == "sudo"
-    assert args[2] == "xdg-open"
-    assert args[3] == str(expected), \
-        "the button must open the user-home override file, not /root's"
+    # Der Button öffnet die User-Home-Override-Datei, nicht /root's.
+    _assert_opens_as_user(args, "jacob", str(expected))
 
     # Status-Check prüft dieselbe Datei, die der Button öffnet
     expected.parent.mkdir(parents=True, exist_ok=True)
@@ -185,9 +229,7 @@ def test_other_config_buttons_open_via_helper(qt_offscreen, monkeypatch, tmp_pat
         assert len(captured) == 1, f"exactly one launch for {btn.text()}"
         program, args, _env = captured[0]
         assert program == "sudo"
-        assert args[2] == "xdg-open"
-        assert args[3] == str(path), \
-            f"{btn.text()} must open {path} in the user's session"
+        _assert_opens_as_user(args, "jacob", str(path))
 
 
 def test_help_menu_opens_links_via_helper(qt_offscreen, monkeypatch):
@@ -210,6 +252,5 @@ def test_help_menu_opens_links_via_helper(qt_offscreen, monkeypatch):
         assert len(captured) == 1, f"exactly one launch for {title}"
         program, args, _env = captured[0]
         assert program == "sudo"
-        assert args[2] == "xdg-open"
-        assert args[3] == url
+        _assert_opens_as_user(args, "jacob", url)
     mw.hide()

@@ -31,6 +31,22 @@ def _asset_icon(name: str) -> QIcon:
     return QIcon(str(Path(__file__).resolve().parent.parent / 'assets' / name))
 
 
+def _set_port_interval(port: dict, key: str, value) -> None:
+    """Update an interval value in a statime port table, in place.
+
+    The installer templates name these keys with underscores
+    (sync_interval) while statime's canonical form is hyphenated
+    (sync-interval): update whichever key the file already defines —
+    keeping its key style — and only create the hyphenated name when
+    the table has neither.
+    """
+    for existing in (key, key.replace('-', '_')):
+        if existing in port:
+            port[existing] = value
+            return
+    port[key] = value
+
+
 class SettingsTab(QWidget):
     """Settings tab for configuring Inferno and statime."""
     
@@ -332,7 +348,7 @@ class SettingsTab(QWidget):
                     self.iface_combo.addItem(display_text, iface)
         finally:
             self.iface_combo.blockSignals(False)
-        
+
         if current:
             idx = self.iface_combo.findData(current)
             if idx >= 0:
@@ -659,9 +675,36 @@ SystemCallFilter=@clock
                         else:
                             cfg.set('log_level', "trace")
                         
-                        # Port settings - use hyphenated names as statime expects
-                        cfg.set('port[0].sync-interval', self.sync_interval.value())
-                        cfg.set('port[0].announce-interval', self.announce_interval.value())
+                        # Port settings - use hyphenated names as statime
+                        # expects.  The installer templates write a [port]
+                        # table (a dict) while hand-rolled configs often
+                        # use a [[port]] array: update whichever shape the
+                        # file has, in place, so the schema shape and key
+                        # style survive the save.  A port whose shape
+                        # matches neither (or anything unexpected) is
+                        # skipped without raising: a shape mismatch must
+                        # not block cfg.save() from writing the other
+                        # changes (domain, log_level).
+                        try:
+                            ports = cfg.get('port')
+                            if isinstance(ports, dict):
+                                port_tables = [ports]
+                            elif isinstance(ports, list):
+                                port_tables = [
+                                    p for p in ports if isinstance(p, dict)
+                                ][:1]
+                            else:
+                                port_tables = []
+                            for port in port_tables:
+                                _set_port_interval(
+                                    port, 'sync-interval',
+                                    self.sync_interval.value())
+                                _set_port_interval(
+                                    port, 'announce-interval',
+                                    self.announce_interval.value())
+                        except Exception:
+                            pass  # Port shape mismatch: still save the rest
+
                         cfg.save()
                 except Exception:
                     pass  # Ignore config update errors

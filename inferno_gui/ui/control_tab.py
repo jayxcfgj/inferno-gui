@@ -1053,7 +1053,7 @@ class ControlTab(QWidget):
         # Farbe aus der gemeinsamen Mapping-Quelle (sync_state) - identisch
         # zu State-Label, Log-Summary und Fenstertitel.
         color = light_color(state, offset)
-        
+
         if state == 'MASTER':
             label = "Grand Master"
             tip = "Grand Master – no PTP peer detected"

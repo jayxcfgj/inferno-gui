@@ -75,9 +75,23 @@ def chown_to_invoking_user(path: Union[str, Path]) -> None:
 def chown_qsettings(settings) -> None:
     """Flush a QSettings object and hand its file to the invoking user.
 
+    Also hands over the settings directory (fileName().parent) and its
+    .config parent when they exist: user_settings() creates them as
+    root, and a root-owned directory would block the invoking user from
+    creating further scope files in it.  Both go through
+    chown_to_invoking_user, so this stays a no-op for anything that
+    already belongs to the user.
+
     Args:
         settings: a QSettings instance; sync() flushes pending writes and
             fileName() names the INI file to chown.
     """
     settings.sync()
     chown_to_invoking_user(settings.fileName())
+    name = settings.fileName()
+    if not name:
+        return
+    path = Path(name)
+    for directory in (path.parent, path.parent.parent):
+        if directory.is_dir():
+            chown_to_invoking_user(directory)

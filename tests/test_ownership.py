@@ -240,6 +240,59 @@ def test_chown_qsettings_after_save(monkeypatch):
         str(settings.fileName()), _me().pw_uid, _me().pw_gid)
 
 
+def test_chown_qsettings_hands_over_settings_dir(monkeypatch, tmp_path):
+    """(g) chown_qsettings() also hands the settings directory and its
+    .config parent to the invoking user: user_settings() creates them as
+    root, and a root-owned directory would block the user from creating
+    further scope files in it."""
+    from inferno_gui.core import ownership
+
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("SUDO_USER", _me().pw_name)
+
+    settings = user_settings("control")
+    settings.setValue("selected_interface", "eth0")
+    settings.sync()
+    conf = Path(settings.fileName())
+    settings_dir = conf.parent        # <home>/.config/InfernoGUI
+    config_dir = settings_dir.parent  # <home>/.config
+
+    with mock.patch("os.getuid", return_value=0), \
+         mock.patch("os.chown") as chown, \
+         _root_owned_files(conf, settings_dir, config_dir):
+        ownership.chown_qsettings(settings)
+
+    # The dir being chowned is what lets the invoking user create more
+    # scope files in it after a sudo run (os.chown mock, same pattern
+    # as the file-handover tests above).
+    chowned = {call.args[0] for call in chown.call_args_list}
+    assert chowned == {str(conf), str(settings_dir), str(config_dir)}
+    for call in chown.call_args_list:
+        assert call.args[1:] == (_me().pw_uid, _me().pw_gid)
+
+
+def test_chown_qsettings_dirs_noop_when_already_owned(monkeypatch, tmp_path):
+    """Directories that already belong to the invoking user are left
+    alone: only the root-owned INI file is handed over, so the new
+    directory handover stays a no-op on an already-correct layout."""
+    from inferno_gui.core import ownership
+
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("SUDO_USER", _me().pw_name)
+
+    settings = user_settings("control")
+    settings.setValue("selected_interface", "eth0")
+    settings.sync()
+
+    with mock.patch("os.getuid", return_value=0), \
+         mock.patch("os.chown") as chown, \
+         _root_owned_files(settings.fileName()):
+        ownership.chown_qsettings(settings)
+
+    assert {call.args[0] for call in chown.call_args_list} == \
+        {str(settings.fileName())}
+
+
 def test_settings_tab_save_chowns_qsettings_file(monkeypatch, tmp_path):
     """SettingsTab.save_settings() hands the QSettings file and .asoundrc
     back to the invoking user."""
