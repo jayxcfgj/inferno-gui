@@ -11,9 +11,10 @@ from PyQt6.QtWidgets import (
     QGroupBox, QCheckBox, QProgressBar, QComboBox, QMenu, QStyle,
     QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt, QProcess, QTimer, QSettings, pyqtSignal, QSize, QProcessEnvironment
+from PyQt6.QtCore import Qt, QProcess, QTimer, pyqtSignal, QSize, QProcessEnvironment
 from PyQt6.QtGui import QFont, QColor
 
+from inferno_gui.core.app_settings import user_settings
 from inferno_gui.core.config import (
     get_statime_binary,
     get_default_statime_config,
@@ -115,6 +116,9 @@ class ControlTab(QWidget):
         self._lock_gate: LockGate | None = None
         self._awaiting_lock = False
         self._lock_wait_ticks = 0
+        # True while the interface selection is restored programmatically;
+        # _on_interface_changed must not persist those transient states.
+        self._restoring_iface = False
         
         self.parser = StatimeLogParser(filter_interval=1.0)
         self._stdout_buffer = ''
@@ -396,9 +400,15 @@ class ControlTab(QWidget):
         self.interface_combo.currentIndexChanged.connect(self._on_interface_changed)
 
     def _load_saved_interface(self):
-        """Load saved interface from settings."""
-        self._refresh_interfaces()
-        settings = QSettings("InfernoGUI", "control")
+        """Load saved interface and PTP version from settings.
+
+        The saved value is read BEFORE the combo is populated: the old
+        order (refresh first) let addItem fire currentIndexChanged, which
+        wrote the first detected interface to the settings before the
+        saved value was ever read.  _refresh_interfaces now restores the
+        saved selection with signals blocked, so nothing is written here.
+        """
+        settings = user_settings("control")
         saved = settings.value("selected_interface", "", type=str)
         ptp_ver = settings.value("ptp_version", "v2", type=str)
         
@@ -407,15 +417,19 @@ class ControlTab(QWidget):
         else:
             self.ptp_v2_radio.setChecked(True)
         
-        if saved:
-            idx = self.interface_combo.findData(saved)
-            if idx >= 0:
-                self.interface_combo.setCurrentIndex(idx)
+        # Populate and restore the saved selection without writing.
+        self._refresh_interfaces(restore=saved)
     
-    def _refresh_interfaces(self):
-        """Refresh the interface list."""
+    def _refresh_interfaces(self, restore: str | None = None):
+        """Refresh the interface list.
+
+        Population runs with the combo's signals blocked so adding items
+        cannot fire currentIndexChanged (which used to write the first
+        interface to the settings).  The selection is then restored
+        without writing: prefer the explicitly requested value (the
+        saved interface), else keep the previously selected one.
+        """
         current = self.interface_combo.currentData()
-        self.interface_combo.clear()
         
         from inferno_gui.core.config import get_available_interfaces, get_interface_ip
         interfaces = get_available_interfaces()
@@ -423,21 +437,36 @@ class ControlTab(QWidget):
         # Store IP info for each interface
         self._interface_ips = {}
         
-        if interfaces:
-            for iface in interfaces:
-                ip = get_interface_ip(iface)
-                self._interface_ips[iface] = ip
-                display_text = f"{iface} ({ip})" if ip else f"{iface} (no IP)"
-                self.interface_combo.addItem(display_text, iface)
-            # Restore selection
-            if current:
-                idx = self.interface_combo.findData(current)
-                if idx >= 0:
-                    self.interface_combo.setCurrentIndex(idx)
-        else:
-            self.interface_combo.addItem("No interfaces found")
-            self.interface_combo.setEnabled(False)
-            self.start_ptp_btn.setEnabled(False)
+        self.interface_combo.blockSignals(True)
+        try:
+            self.interface_combo.clear()
+            if interfaces:
+                for iface in interfaces:
+                    ip = get_interface_ip(iface)
+                    self._interface_ips[iface] = ip
+                    display_text = f"{iface} ({ip})" if ip else f"{iface} (no IP)"
+                    self.interface_combo.addItem(display_text, iface)
+            else:
+                self.interface_combo.addItem("No interfaces found")
+                self.interface_combo.setEnabled(False)
+                self.start_ptp_btn.setEnabled(False)
+        finally:
+            self.interface_combo.blockSignals(False)
+
+        # Restore the selection without writing settings.
+        target = restore or current
+        idx = self.interface_combo.findData(target) if target else -1
+        self._restoring_iface = True
+        try:
+            if idx >= 0 and idx != self.interface_combo.currentIndex():
+                self.interface_combo.setCurrentIndex(idx)
+            else:
+                # Population changed the index with signals blocked, so
+                # the handler never ran for it; run it once now to sync
+                # the IP label / start button (the flag blocks the write).
+                self._on_interface_changed(self.interface_combo.currentIndex())
+        finally:
+            self._restoring_iface = False
         
         # Update start button state based on current selection
         self._update_start_button_state()
@@ -454,7 +483,11 @@ class ControlTab(QWidget):
         """Handle interface selection change."""
         iface = self.interface_combo.currentData()
         if iface and not iface.startswith("No interfaces"):
-            QSettings("InfernoGUI", "control").setValue("selected_interface", iface)
+            if not self._restoring_iface:
+                # Only genuine user changes persist; programmatic
+                # restores (startup, refresh) must not overwrite the
+                # saved value.
+                user_settings("control").setValue("selected_interface", iface)
             ip = self._interface_ips.get(iface)
             if ip:
                 self.ip_label.setText(f"IP: {ip}")
@@ -472,7 +505,7 @@ class ControlTab(QWidget):
         """Handle PTP version radio button change."""
         if checked:
             version = 'v1' if button_id == 1 else 'v2'
-            QSettings("InfernoGUI", "control").setValue("ptp_version", version)
+            user_settings("control").setValue("ptp_version", version)
             if self.settings_tab:
                 self.settings_tab.set_ptp_version(version)
 

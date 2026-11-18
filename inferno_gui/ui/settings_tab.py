@@ -9,10 +9,11 @@ from PyQt6.QtWidgets import (
     QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle,
     QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QDesktopServices
 from PyQt6.QtCore import QUrl, QTimer
 
+from inferno_gui.core.app_settings import user_settings
 from inferno_gui.core.config import (
     InfernoConfig,
     StatimeConfig,
@@ -272,28 +273,45 @@ class SettingsTab(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll)
 
+        # Populate the interface list BEFORE load_settings() runs (from
+        # __init__) — otherwise findData(saved) can never match and the
+        # saved selection is lost.
+        self._refresh_interfaces()
+
         # Initial checks
         QTimer.singleShot(500, self._check_system_status)
     
     def _refresh_interfaces(self):
-        """Refresh interface list."""
+        """Refresh interface list.
+
+        Population runs with the combo's signals blocked: adding items
+        used to fire currentIndexChanged, emitting interface_changed for
+        the transient first item, which propagated to the control tab
+        and overwrote the saved interface there.  The previous selection
+        is restored afterwards (same value, so nothing changes).
+        """
         current = self.iface_combo.currentData()
-        self.iface_combo.clear()
-        interfaces = get_available_interfaces()
         
         # Store IP info for each interface
         self._interface_ips = {}
         
-        if interfaces:
-            for iface in interfaces:
-                ip = get_interface_ip(iface)
-                self._interface_ips[iface] = ip
-                display_text = f"{iface} ({ip})" if ip else f"{iface} (no IP)"
-                self.iface_combo.addItem(display_text, iface)
-            if current:
-                idx = self.iface_combo.findData(current)
-                if idx >= 0:
-                    self.iface_combo.setCurrentIndex(idx)
+        self.iface_combo.blockSignals(True)
+        try:
+            self.iface_combo.clear()
+            interfaces = get_available_interfaces()
+            if interfaces:
+                for iface in interfaces:
+                    ip = get_interface_ip(iface)
+                    self._interface_ips[iface] = ip
+                    display_text = f"{iface} ({ip})" if ip else f"{iface} (no IP)"
+                    self.iface_combo.addItem(display_text, iface)
+        finally:
+            self.iface_combo.blockSignals(False)
+        
+        if current:
+            idx = self.iface_combo.findData(current)
+            if idx >= 0:
+                self.iface_combo.setCurrentIndex(idx)
         self._update_ip_display()
     
     def _on_iface_changed(self, index):
@@ -415,7 +433,7 @@ SystemCallFilter=@clock
 
     def load_settings(self):
         """Load settings from config files and QSettings."""
-        settings = QSettings("InfernoGUI", "control")  # Use same group as control tab
+        settings = user_settings("control")  # Use same group as control tab
         
         # Load inferno config
         if self.inferno_config.load():
@@ -522,7 +540,7 @@ SystemCallFilter=@clock
     
     def save_settings(self):
         """Save all settings to config files."""
-        settings = QSettings("InfernoGUI", "control")  # Use same group as control tab
+        settings = user_settings("control")  # Use same group as control tab
         
         # Save inferno config
         self.inferno_config.set('name', self.device_name.text())

@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QPushButton, QSystemTrayIcon, QMenu,
     QMessageBox, QApplication
 )
-from PyQt6.QtCore import Qt, QTimer, QSettings
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QFont
 
 from inferno_gui.core.version import (
@@ -18,6 +18,7 @@ from inferno_gui.core.version import (
     __license__,
     __author__,
 )
+from inferno_gui.core.app_settings import user_settings
 from inferno_gui.core.sync_state import display_state, tray_state
 from inferno_gui.ui.control_tab import ControlTab
 from inferno_gui.ui.settings_tab import SettingsTab
@@ -295,7 +296,7 @@ class MainWindow(QMainWindow):
 
     def _load_window_state(self):
         """Load window geometry and state."""
-        settings = QSettings("InfernoGUI", "window")
+        settings = user_settings("window")
         geometry = settings.value("geometry")
         if geometry:
             self.restoreGeometry(geometry)
@@ -305,7 +306,7 @@ class MainWindow(QMainWindow):
 
     def _save_window_state(self):
         """Save window geometry and state."""
-        settings = QSettings("InfernoGUI", "window")
+        settings = user_settings("window")
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("windowState", self.saveState())
 
