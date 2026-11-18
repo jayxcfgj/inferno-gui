@@ -1,6 +1,5 @@
 """Settings Tab – Configure Inferno audio parameters and system settings."""
 
-import os
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -9,20 +8,21 @@ from PyQt6.QtWidgets import (
     QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle,
     QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QFont, QDesktopServices
-from PyQt6.QtCore import QUrl, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer
+from PyQt6.QtGui import QFont
 
 from inferno_gui.core.app_settings import user_settings
 from inferno_gui.core.config import (
     InfernoConfig,
     StatimeConfig,
+    get_actual_user_home,
     get_available_interfaces,
     get_interface_ip,
     get_default_statime_config,
     get_work_dir,
 )
 from inferno_gui.core.log_parser import LogSeverity
+from inferno_gui.ui.url_utils import open_url_as_user
 
 
 class SettingsTab(QWidget):
@@ -156,8 +156,10 @@ class SettingsTab(QWidget):
         config_layout = QVBoxLayout(config_group)
         config_layout.setSpacing(8)
 
-        # PipeWire override
-        pw_override_path = Path.home() / ".config/systemd/user/pipewire.service.d/override.conf"
+        # PipeWire override — resolve against the actual user's home
+        # (Path.home() is /root when the GUI runs under sudo)
+        pw_override_path = get_actual_user_home() / ".config/systemd/user/pipewire.service.d/override.conf"
+        self._pw_override_path = pw_override_path
         self.pw_override_btn = QPushButton("Open PipeWire Override")
         try:
             from PyQt6.QtGui import QIcon
@@ -167,9 +169,7 @@ class SettingsTab(QWidget):
                 self.pw_override_btn.setIconSize(QSize(16, 16))
         except Exception:
             pass
-        self.pw_override_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(pw_override_path)))
-        )
+        self.pw_override_btn.clicked.connect(self._open_pw_override)
         config_layout.addWidget(self.pw_override_btn)
         
         self.pw_override_status = QLabel("Checking...")
@@ -178,6 +178,7 @@ class SettingsTab(QWidget):
         
         # PTPv1 config
         ptpv1_path = get_default_statime_config('v1')
+        self._ptpv1_path = ptpv1_path
         self.ptpv1_btn = QPushButton("Open PTPv1 Config")
         try:
             from PyQt6.QtGui import QIcon
@@ -187,13 +188,12 @@ class SettingsTab(QWidget):
                 self.ptpv1_btn.setIconSize(QSize(16, 16))
         except Exception:
             pass
-        self.ptpv1_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv1_path)))
-        )
+        self.ptpv1_btn.clicked.connect(self._open_ptpv1_config)
         config_layout.addWidget(self.ptpv1_btn)
         
         # PTPv2 config
         ptpv2_path = get_default_statime_config('v2')
+        self._ptpv2_path = ptpv2_path
         self.ptpv2_btn = QPushButton("Open PTPv2 Config")
         try:
             from PyQt6.QtGui import QIcon
@@ -203,23 +203,13 @@ class SettingsTab(QWidget):
                 self.ptpv2_btn.setIconSize(QSize(16, 16))
         except Exception:
             pass
-        self.ptpv2_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(ptpv2_path)))
-        )
+        self.ptpv2_btn.clicked.connect(self._open_ptpv2_config)
         config_layout.addWidget(self.ptpv2_btn)
         
-        # ALSA config
-        # Use a robust approach to get the actual user's home directory
-        try:
-            import pwd
-            user_home = pwd.getpwnam(os.getlogin()).pw_dir
-        except Exception:
-            import os
-            user = os.environ.get('SUDO_USER') or os.environ.get('USER') or os.environ.get('LOGNAME') or os.getlogin()
-            user_home = Path(f"/home/{user}") if user != 'root' else Path.home()
-        else:
-            user_home = Path.home()
-        alsa_rc_path = Path(user_home) / ".asoundrc"
+        # ALSA config — same home resolution as InfernoConfig (config.py):
+        # the actual user's home, never root's under sudo
+        alsa_rc_path = get_actual_user_home() / ".asoundrc"
+        self._asoundrc_path = alsa_rc_path
         self.asoundrc_btn = QPushButton("Open ~/.asoundrc")
         try:
             from PyQt6.QtGui import QIcon
@@ -229,9 +219,7 @@ class SettingsTab(QWidget):
                 self.asoundrc_btn.setIconSize(QSize(16, 16))
         except Exception:
             pass
-        self.asoundrc_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(alsa_rc_path)))
-        )
+        self.asoundrc_btn.clicked.connect(self._open_asoundrc)
         config_layout.addWidget(self.asoundrc_btn)
         
         self.alsa_plugin_status = QLabel("Checking...")
@@ -280,6 +268,22 @@ class SettingsTab(QWidget):
 
         # Initial checks
         QTimer.singleShot(500, self._check_system_status)
+
+    def _open_pw_override(self):
+        """Open the PipeWire override in the user's session."""
+        open_url_as_user(str(self._pw_override_path))
+
+    def _open_ptpv1_config(self):
+        """Open the PTPv1 statime config in the user's session."""
+        open_url_as_user(str(self._ptpv1_path))
+
+    def _open_ptpv2_config(self):
+        """Open the PTPv2 statime config in the user's session."""
+        open_url_as_user(str(self._ptpv2_path))
+
+    def _open_asoundrc(self):
+        """Open ~/.asoundrc in the user's session."""
+        open_url_as_user(str(self._asoundrc_path))
     
     def _refresh_interfaces(self):
         """Refresh interface list.
@@ -345,8 +349,9 @@ class SettingsTab(QWidget):
 
     def _check_system_status(self):
         """Check PipeWire override and ALSA plugin status."""
-        # Check PipeWire override
-        override_file = Path.home() / ".config/systemd/user/pipewire.service.d/override.conf"
+        # Check PipeWire override (same file the "Open" button targets,
+        # resolved via the actual user's home)
+        override_file = self._pw_override_path
         if override_file.exists():
             content = override_file.read_text()
             if "@clock" in content:

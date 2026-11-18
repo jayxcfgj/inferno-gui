@@ -23,6 +23,7 @@ from inferno_gui.core.sync_state import display_state, tray_state
 from inferno_gui.ui.control_tab import ControlTab
 from inferno_gui.ui.settings_tab import SettingsTab
 from inferno_gui.ui.about_dialog import AboutDialog
+from inferno_gui.ui.url_utils import open_url_as_user
 
 
 class MainWindow(QMainWindow):
@@ -203,11 +204,13 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about_action)
         
         inferno_github = QAction("Inferno GitHub", self)
-        inferno_github.triggered.connect(lambda: self._open_url("https://github.com/teodly/inferno"))
+        inferno_github.triggered.connect(
+            lambda: open_url_as_user("https://github.com/teodly/inferno"))
         help_menu.addAction(inferno_github)
         
         statime_github = QAction("Statime GitHub", self)
-        statime_github.triggered.connect(lambda: self._open_url("https://github.com/teodly/statime"))
+        statime_github.triggered.connect(
+            lambda: open_url_as_user("https://github.com/teodly/statime"))
         help_menu.addAction(statime_github)
 
     def _connect_signals(self):
@@ -287,12 +290,6 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         """Show about dialog."""
         AboutDialog(self).exec()
-
-    def _open_url(self, url: str):
-        """Open URL in default browser."""
-        from PyQt6.QtCore import QUrl
-        from PyQt6.QtGui import QDesktopServices
-        QDesktopServices.openUrl(QUrl(url))
 
     def _load_window_state(self):
         """Load window geometry and state."""
