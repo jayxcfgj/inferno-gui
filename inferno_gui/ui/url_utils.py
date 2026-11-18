@@ -9,8 +9,9 @@ the session environment cannot ride on sudo's own environment: sudo
 env_reset strips it before the target command runs.  It therefore
 travels as target-side ``env KEY=value`` command arguments, with
 UID-derived defaults for keys the current environment lacks (a direct
-``sudo inferno-gui`` launch bypasses run_gui.sh's env reconstruction,
-so XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS may be missing entirely).
+``sudo inferno-gui`` launch does not reconstruct the user session
+environment, so XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS may be missing
+entirely).
 """
 
 import logging
@@ -25,7 +26,7 @@ from inferno_gui.core.config import get_actual_user_home
 _LOG = logging.getLogger(__name__)
 
 # Session variables the child needs to reach the user's desktop (the
-# same set run_gui.sh / control_tab._get_pipewire_env forward).  Only
+# same set control_tab._get_pipewire_env forwards).  Only
 # variables that are actually set in our environment are forwarded;
 # XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS additionally have
 # UID-derived defaults for when the environment lacks them.
@@ -49,8 +50,7 @@ def _target_uid(user: str) -> Optional[int]:
 def _target_env_args(user: str) -> List[str]:
     """Session env for the target user, as ``env KEY=value`` arguments.
 
-    Values come from the current environment when set (run_gui.sh
-    exports them before sudo'ing the GUI); otherwise
+    Values come from the current environment when set; otherwise
     XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS fall back to the
     target user's UID-derived paths so xdg-open still finds the
     runtime directory and the session bus.

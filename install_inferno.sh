@@ -1527,7 +1527,6 @@ show_summary() {
     echo "Inferno GUI:"
     echo "  Launch with: sudo inferno-gui"
     echo "  Or directly:   sudo python3 -m inferno_gui"
-    echo "  Or from dir:   sudo ./run_gui.sh"
     echo "  (Requires root for PTP hardware timestamping)"
 }
 
