@@ -173,6 +173,20 @@ def test_manifest_removal_precedes_user_redirect():
     assert remove_idx < redirect_idx
 
 
+def test_interactive_audio_app_gate_not_raw_logged():
+    """The 'close audio apps' gate must run via run_as_user_interactive (its
+    own echoes are the UI); run_as_user would print the raw shell string
+    plus the prompt output, duplicating the message."""
+    content = _content()
+    assert "run_as_user_interactive()" in content
+    gate_idx = content.index("Please close ALL audio apps")
+    prefix = content[:gate_idx]
+    assert prefix.rsplit("run_as_user_interactive", 1)[-1] is not None
+    assert "run_as_user_interactive 'echo" in content
+    assert "run_as_user 'echo" not in content
+
+
+
 def test_cleanup_source_prefix_usr():
     """Test 4: PipeWire aus Git mit Prefix /usr - wird nicht manifestiert (nur /usr/local)."""
     content = _content()

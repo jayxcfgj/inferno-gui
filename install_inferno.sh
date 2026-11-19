@@ -111,6 +111,20 @@ run_as_user() {
     fi
 }
 
+run_as_user_interactive() {
+    # Interactive command run as the invoking user WITHOUT logging the raw
+    # shell text — the command's own prompts/echoes are the user interface.
+    if [ "$TEST_MODE" = true ]; then
+        echo -e "${YELLOW}[DRY-RUN]${NC} (interactive user prompt)"
+        return 0
+    fi
+    if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+        sudo -H -u "$SUDO_USER_VAL" XDG_RUNTIME_DIR="/run/user/$(id -u "$SUDO_USER_VAL")" bash -c "$*"
+    else
+        bash -c "$*"
+    fi
+}
+
 prompt_yes_no() {
     local prompt="$1"
     local default="${2:-y}"
@@ -529,7 +543,7 @@ step_pipewire() {
     run_cmd_sudo "ldconfig"
     
     log_step "Restarting PipeWire services (as user)"
-    run_as_user 'echo "⚠️  Please close ALL audio apps (Browser, VLC, qpwgraph, DAWs, ...)" && read -rp "Press Enter when done..."'
+    run_as_user_interactive 'echo "⚠️  Please close ALL audio apps (Browser, VLC, qpwgraph, DAWs, ...)" && read -rp "Press Enter when done..."'
     run_as_user "systemctl --user daemon-reload"
     run_as_user "systemctl --user restart pipewire pipewire-pulse wireplumber"
 
