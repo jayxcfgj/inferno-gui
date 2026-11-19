@@ -164,6 +164,15 @@ def test_cleanup_source_prefix_usrlocal():
     assert "manifest.txt" in content
 
 
+def test_manifest_removal_precedes_user_redirect():
+    """Re-install: stale root-owned manifest must be removed as root before the
+    user-side redirect truncates it (a root-owned 0600 file rejects '>')."""
+    content = _content()
+    remove_idx = content.index('run_cmd_sudo "rm -f \\"$MANIFEST_FILE\\"')
+    redirect_idx = content.index('sort > \\"$MANIFEST_FILE\\"')
+    assert remove_idx < redirect_idx
+
+
 def test_cleanup_source_prefix_usr():
     """Test 4: PipeWire aus Git mit Prefix /usr - wird nicht manifestiert (nur /usr/local)."""
     content = _content()

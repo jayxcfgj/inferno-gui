@@ -512,6 +512,9 @@ step_pipewire() {
         # Only create manifest if installed under /usr/local (our standard prefix)
         if echo "/usr/local" | grep -q "/usr/local"; then
             log_step "Writing PipeWire source manifest for future cleanup"
+            # A previous run's manifest is root-owned 0600; a user-side
+            # redirect cannot truncate it. Remove it as root first.
+            run_cmd_sudo "rm -f \"$MANIFEST_FILE\""
             run_as_user "mkdir -p \"$MANIFEST_DIR\""
             # Find all files installed under /usr/local that belong to this build
             run_as_user "find /usr/local -type f -not -path '*/lib/python*' -not -path '*/share/doc/*' -not -path '*/man/*' 2>/dev/null | sort > \"$MANIFEST_FILE\""
