@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QLineEdit,
     QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle,
     QRadioButton, QButtonGroup, QDoubleSpinBox
@@ -134,12 +134,18 @@ class SettingsTab(QWidget):
         # window heights.
         grid = QGridLayout(content)
         grid.setSpacing(10)
-        grid.setContentsMargins(8, 8, 8, 8)
+        # 6px outer margins (compact layout, down from 8): the scroll
+        # viewport already frames the content; every horizontal pixel
+        # counts toward the 770px-viewport budget.
+        grid.setContentsMargins(6, 6, 6, 6)
 
         # ── Network Interface ────────────────────────────────────
         net_group = QGroupBox("Network Interface")
         net_layout = QFormLayout(net_group)
-        net_layout.setSpacing(8)
+        # 6px spacing (compact layout, down from the 8px default):
+        # stacking the PTP radios costs one radio height, and the
+        # standard-window (560px) height budget needs it back.
+        net_layout.setSpacing(6)
         net_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.iface_combo = QComboBox()
@@ -151,7 +157,11 @@ class SettingsTab(QWidget):
         self.iface_combo.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.iface_combo.setMinimumContentsLength(20)
-        self.iface_combo.setMinimumWidth(250)
+        # 200px usability floor (down from 250): with the PTP radios
+        # stacked above, a 250px floor kept the Network group at 401px
+        # and the 770px-viewport compact layout out of budget; 200
+        # still shows the ~20-character sizing with room to spare.
+        self.iface_combo.setMinimumWidth(200)
         self.iface_combo.currentIndexChanged.connect(self._on_iface_changed)
         net_layout.addRow("Dante/PTP Interface:", self.iface_combo)
 
@@ -164,7 +174,11 @@ class SettingsTab(QWidget):
         self.ip_display.setStyleSheet("color: #4caf50; font-family: monospace;")
         net_layout.addRow("Current IP:", self.ip_display)
 
-        # PTP Version
+        # PTP Version — the two radios stack VERTICALLY under each
+        # other (user-approved compact layout): side by side their
+        # 155px hints forced the Network group to a 467px minimum and
+        # with it the whole content past the 770px-viewport budget.
+        # Stacked, the wider combo row drives the field column alone.
         self.ptp_v1_radio = QRadioButton("PTPv1 (IEEE 1588-2002)")
         self.ptp_v2_radio = QRadioButton("PTPv2 (IEEE 1588-2008)")
         self.ptp_v2_radio.setChecked(True)
@@ -172,10 +186,10 @@ class SettingsTab(QWidget):
         self.ptp_version_group.addButton(self.ptp_v1_radio, 1)
         self.ptp_version_group.addButton(self.ptp_v2_radio, 2)
         self.ptp_version_group.idToggled.connect(self._on_ptp_version_toggled)
-        ptp_ver_layout = QHBoxLayout()
+        ptp_ver_layout = QVBoxLayout()
+        ptp_ver_layout.setSpacing(2)
         ptp_ver_layout.addWidget(self.ptp_v1_radio)
         ptp_ver_layout.addWidget(self.ptp_v2_radio)
-        ptp_ver_layout.addStretch()
         net_layout.addRow("PTP Version:", ptp_ver_layout)
 
         # ── Audio Parameters ─────────────────────────────────────
@@ -184,13 +198,26 @@ class SettingsTab(QWidget):
         # RX Channels | RX Latency (user requirement).
         audio_group = QGroupBox("Audio Parameters")
         audio_layout = QGridLayout(audio_group)
-        audio_layout.setSpacing(8)
+        # Compact horizontal metrics (user-approved 770px-viewport
+        # layout): the default 8px/11px Fusion spacing/margins made the
+        # paired rows a 405px minimum — the widest left-column group
+        # once the PTP radios are stacked. 4px/6px trims that to ~380
+        # without crowding the rows; the vertical gap stays airy at 6px
+        # (down from 8) to pay for the radio stack's extra height in
+        # the Network group above.
+        audio_layout.setHorizontalSpacing(4)
+        audio_layout.setVerticalSpacing(6)
+        audio_layout.setContentsMargins(6, 6, 6, 6)
 
         self.device_name = QLineEdit("Inferno")
-        self.device_name.setMinimumWidth(250)
+        # 200px floor (down from 250): the edit box spans the three
+        # field columns (natural sum ~239px), so 250 inflated the
+        # grid's column minimums by ~11px and with them the whole
+        # Audio group past the compact-layout budget.
+        self.device_name.setMinimumWidth(200)
         audio_layout.addWidget(
             QLabel("Device Name:"), 0, 0, Qt.AlignmentFlag.AlignRight)
-        # Spans the field columns so the 250px minimum spreads across
+        # Spans the field columns so the 200px minimum spreads across
         # them instead of blowing up column 1 (keeps the rows slim).
         audio_layout.addWidget(self.device_name, 0, 1, 1, 3)
 
@@ -206,6 +233,12 @@ class SettingsTab(QWidget):
         self.tx_channels.setRange(1, 64)
         self.tx_channels.setValue(24)
         self.tx_channels.setSuffix(" channels")
+        # Width cap (compact layout): the spinbox's natural minimum is
+        # ~95px at default metrics, so this never binds normally — but
+        # with fat widget metrics (font scale, larger style fonts) the
+        # hint inflates and Qt clamps the layout minimum to the cap,
+        # hard-bounding the paired rows' width.
+        self.tx_channels.setMaximumWidth(140)
         audio_layout.addWidget(
             QLabel("TX Channels (Output):"), 2, 0, Qt.AlignmentFlag.AlignRight)
         audio_layout.addWidget(self.tx_channels, 2, 1)
@@ -220,6 +253,8 @@ class SettingsTab(QWidget):
         self.rx_channels.setRange(1, 64)
         self.rx_channels.setValue(24)
         self.rx_channels.setSuffix(" channels")
+        # Same compact-layout width cap as the TX spinbox.
+        self.rx_channels.setMaximumWidth(140)
         audio_layout.addWidget(
             QLabel("RX Channels (Input):"), 3, 0, Qt.AlignmentFlag.AlignRight)
         audio_layout.addWidget(self.rx_channels, 3, 1)
@@ -258,7 +293,9 @@ class SettingsTab(QWidget):
         # ── Advanced statime Options ────────────────────────────
         adv_group = QGroupBox("Advanced statime Options")
         adv_layout = QFormLayout(adv_group)
-        adv_layout.setSpacing(8)
+        # 6px spacing (compact layout, down from the 8px default):
+        # same standard-window height reclaim as the Network group.
+        adv_layout.setSpacing(6)
         adv_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.ptp_domain = QSpinBox()
@@ -295,6 +332,10 @@ class SettingsTab(QWidget):
         config_group = QGroupBox("Config Files")
         config_layout = QVBoxLayout(config_group)
         config_layout.setSpacing(8)
+        # 6px margins (compact layout, down from the 11px style
+        # default): the buttons drive the group width, and every saved
+        # pixel counts toward the 620px content budget.
+        config_layout.setContentsMargins(6, 6, 6, 6)
 
         # PipeWire override — resolve against the actual user's home
         # (Path.home() is /root when the GUI runs under sudo)
@@ -314,6 +355,11 @@ class SettingsTab(QWidget):
         
         self.pw_override_status = QLabel("Checking...")
         self.pw_override_status.setStyleSheet("color: #aaa; font-size: 11px;")
+        # Word wrap: once the status check resolves, this label can
+        # hold a long path; wrapped it keeps the (now width-capped)
+        # right column at its button-driven minimum instead of
+        # imposing the text width on the whole tab.
+        self.pw_override_status.setWordWrap(True)
         config_layout.addWidget(self.pw_override_status)
         
         # PTPv1 config
@@ -364,6 +410,9 @@ class SettingsTab(QWidget):
         
         self.alsa_plugin_status = QLabel("Checking...")
         self.alsa_plugin_status.setStyleSheet("color: #aaa; font-size: 11px;")
+        # Word wrap: same compact-layout reason as the PipeWire status
+        # label above — the resolved text can carry a long plugin path.
+        self.alsa_plugin_status.setWordWrap(True)
         config_layout.addWidget(self.alsa_plugin_status)
 
         # ── Actions ──────────────────────────────────────────────
@@ -373,6 +422,9 @@ class SettingsTab(QWidget):
         actions_group = QGroupBox("Actions")
         actions_layout = QVBoxLayout(actions_group)
         actions_layout.setSpacing(8)
+        # 6px margins (compact layout, down from the 11px style
+        # default): the save/reset buttons drive this group's width.
+        actions_layout.setContentsMargins(6, 6, 6, 6)
 
         self.save_btn = QPushButton("Save Configuration")
         _save_icon = _asset_icon('save.svg')
@@ -424,6 +476,13 @@ class SettingsTab(QWidget):
         # heights independent and the fallback scroll area idle at
         # standard window sizes.
         right_column = QWidget()
+        # Hard width cap (user-approved compact layout): with only the
+        # 3:2 column stretch a 980px-wide window rendered this column
+        # at 382px — roughly double what the buttons and the overview
+        # need.  The cap pins it in the ~200–240px band at every
+        # window size; spare width collects in the left column, and
+        # the overview's labels wrap so nothing clips.
+        right_column.setMaximumWidth(240)
         right_layout = QVBoxLayout(right_column)
         right_layout.setSpacing(12)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -477,6 +536,11 @@ class SettingsTab(QWidget):
         sb.setSingleStep(0.5)
         sb.setSuffix(" ms")
         sb.setValue(10.0)
+        # Width cap (compact layout): the "40.0 ms" hint is ~72px at
+        # default metrics so the cap never binds there; with fat
+        # widget metrics the hint inflates and Qt clamps the layout
+        # minimum to 120px, keeping the paired rows narrow.
+        sb.setMaximumWidth(120)
         sb.setToolTip(
             "Inferno network latency for this direction, in milliseconds.\n\n"
             "Below ~1 ms RX underruns become likely — inferno does not clamp "

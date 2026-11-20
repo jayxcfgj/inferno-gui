@@ -15,6 +15,11 @@ Covers the latency-visualization Task 3 contract:
   centered instead of stretching to the viewport: the right column
   stays strictly narrower than the left, no horizontal scrollbar
   appears at 1900px, and resizing back to 760x560 changes nothing.
+- compact layout for a 770px-logical viewport: the PTP version radios
+  stack vertically (Network group ≤ 360px), the right column stays
+  in the ~200–240px band even on wide windows, and the scroll
+  content's minimum stays ≤ 620px so fat widget metrics still fit
+  770px without horizontal scrolling.
 
 Run: QT_QPA_PLATFORM=offscreen python -m pytest tests/test_settings_latency.py -q
 """
@@ -403,3 +408,135 @@ def test_wide_window_caps_content_and_keeps_right_column_narrower(
         "horizontal scrollbar appeared after resizing back to 760x560"
 
     st.hide()
+
+
+def test_ptp_version_radios_stacked_and_net_group_narrow(
+        user_home, monkeypatch):
+    """(j) The two PTP version radios stack vertically (side by side
+    they forced the Network Interface group to a 467px minimum); the
+    stacked group fits the 360px compact budget the 770px-viewport
+    layout needs."""
+    from PyQt6.QtWidgets import QVBoxLayout
+
+    st = _make_tab(monkeypatch, user_home)
+
+    # The radios share one nested sub-layout of the Network form, and
+    # that sub-layout is a vertical box (QFormLayout wraps a sub-layout
+    # passed to addRow; the radio widgets stay children of the group).
+    v1, v2 = st.ptp_v1_radio, st.ptp_v2_radio
+    net_form = st.iface_combo.parentWidget().layout()
+    radio_layout = None
+    for i in range(net_form.count()):
+        item = net_form.itemAt(i)
+        sub = item.layout() if item is not None else None
+        if sub is not None and sub.indexOf(v1) != -1 and sub.indexOf(v2) != -1:
+            radio_layout = sub
+            break
+    assert radio_layout is not None, \
+        "no single sub-layout holds both PTP radios"
+    assert isinstance(radio_layout, QVBoxLayout), \
+        f"PTP radios must be stacked in a QVBoxLayout, got {radio_layout}"
+
+    # Rendered geometry: PTPv2 sits fully below PTPv1 (not beside it).
+    st.show()
+    _ensure_app().processEvents()
+    assert v2.y() >= v1.y() + v1.height(), (
+        f"PTPv2 must sit below PTPv1: "
+        f"v1 y={v1.y()} height={v1.height()}, v2 y={v2.y()}")
+    st.hide()
+
+    net_group = st.iface_combo.parentWidget()
+    net_min = net_group.minimumSizeHint().width()
+    assert net_min <= 360, \
+        f"Network group minimum {net_min}px exceeds the 360px budget " \
+        "(the stacked radios alone must not leave the combo floor above it)"
+
+
+def test_right_column_stays_narrow_on_wide_windows(user_home, monkeypatch):
+    """(k) The right column (Latency Overview / Actions / Config Files)
+    renders at ~200–240px instead of stretching with the window: its
+    container's minimum stays ≤ 260px and a 1900px window never grows
+    it past 260px (the 3:2 stretch alone used to render it 382px wide)."""
+    import inferno_gui.ui.settings_tab as settings_tab
+
+    _fake_interfaces(monkeypatch, LONG_IFACES, LONG_IFACE_IPS)
+    monkeypatch.setattr(
+        settings_tab, "read_pipewire_latency", lambda: PW_SAMPLE)
+
+    st = settings_tab.SettingsTab()
+    _ensure_app().processEvents()
+
+    actions_group = st.save_btn.parentWidget()
+    right_column = actions_group.parentWidget()
+    assert right_column.minimumSizeHint().width() <= 260, \
+        (f"right column minimum {right_column.minimumSizeHint().width()}px "
+         "exceeds the 260px budget")
+
+    st.show()
+    _ensure_app().processEvents()
+    st._refresh_latency_overview()
+    _ensure_app().processEvents()
+
+    # Guard against a false pass: the populated overview is the widest
+    # the right column ever gets.
+    assert st.latency_bar.total_text() == \
+        "Total ≈ 58.0 ms (Inferno 10.0 + PipeWire round-trip ≈ 48.0)", \
+        st.latency_bar.total_text()
+
+    st.resize(1900, 900)
+    _ensure_app().processEvents()
+    _ensure_app().processEvents()
+    assert right_column.width() <= 260, (
+        f"right column stretched to {right_column.width()}px on a wide "
+        "window; it must stay in the ~200–240px band")
+
+    st.hide()
+
+
+def test_compact_content_fits_770_viewport(user_home, monkeypatch):
+    """(l) Compact-layout budget: the scroll content's minimum stays
+    ≤ 620px (offscreen metrics) so the user's 770px-logical viewport
+    holds the tab without horizontal scrolling even with fat widget
+    metrics — in the CONSTRUCTION state and with the overview
+    POPULATED, and nothing clips at 770x950."""
+    import inferno_gui.ui.settings_tab as settings_tab
+
+    # Construction state.
+    st = _make_tab(monkeypatch, user_home)
+    scroll = st.findChild(QScrollArea)
+    content = scroll.widget()
+    con_min = content.minimumSizeHint().width()
+    assert con_min <= 620, \
+        f"construction content minimum {con_min}px exceeds the 620px budget"
+
+    # Populated state: long interfaces in the combo and a live
+    # PipeWire estimate in the overview.
+    _fake_interfaces(monkeypatch, LONG_IFACES, LONG_IFACE_IPS)
+    monkeypatch.setattr(
+        settings_tab, "read_pipewire_latency", lambda: PW_SAMPLE)
+
+    st2 = settings_tab.SettingsTab()
+    _ensure_app().processEvents()
+    st2.show()
+    _ensure_app().processEvents()
+    st2._refresh_latency_overview()
+    _ensure_app().processEvents()
+
+    assert st2.latency_bar.total_text() == \
+        "Total ≈ 58.0 ms (Inferno 10.0 + PipeWire round-trip ≈ 48.0)", \
+        st2.latency_bar.total_text()
+
+    scroll2 = st2.findChild(QScrollArea)
+    content2 = scroll2.widget()
+    pop_min = content2.minimumSizeHint().width()
+    assert pop_min <= 620, \
+        f"populated content minimum {pop_min}px exceeds the 620px budget"
+
+    # Nothing clipped at the 770x950 viewport: no horizontal scrollbar.
+    st2.resize(770, 950)
+    _ensure_app().processEvents()
+    _ensure_app().processEvents()
+    assert scroll2.horizontalScrollBar().maximum() == 0, \
+        "horizontal scrollbar appeared at the 770x950 viewport"
+
+    st2.hide()
