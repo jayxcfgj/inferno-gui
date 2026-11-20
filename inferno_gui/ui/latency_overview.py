@@ -32,7 +32,7 @@ unknown hint, gray #aaa for informational hints, dark track #3d3d3d.
 
 from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QPainter
-from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 _INFERNO_COLOR = QColor("#4caf50")   # settings tab green (status OK)
 _PIPEWIRE_COLOR = QColor("#2196F3")  # the app's existing blue
@@ -79,6 +79,18 @@ class LatencyBar(QWidget):
         self._total_label = QLabel("—")
         self._hint_label = QLabel("estimated")
         self._hint_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        # The populated lines (total ≈331px, details ≈295px) must not
+        # impose their one-line width on the right column of a 760px
+        # window: word wrap lets them take whatever width the column
+        # offers, and the Ignored horizontal size policy keeps their
+        # size hint out of the column's width calculation (a wrapped
+        # label's hint is not width-deterministic). The text stays
+        # fully visible — wrapped — and the tooltip keeps the complete
+        # scope disclosure either way.
+        for lab in (self._total_label, self._hint_label):
+            lab.setWordWrap(True)
+            lab.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
         # The painted strip occupies the top _STRIP_H pixels, reserved
         # via the layout's top margin; the labels sit below it.

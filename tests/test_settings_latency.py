@@ -7,7 +7,10 @@ Covers the latency-visualization Task 3 contract:
 - reset restores 10.0 ms; dirty tracking includes the spinboxes
 - two-column QGridLayout: channels share rows with latency, Actions and
   Config Files share the right column, content fits 760x560 without the
-  fallback scroll area needing to scroll.
+  fallback scroll area needing to scroll — in the CONSTRUCTION state and
+  with the Latency Overview POPULATED from a live PipeWire estimate
+  (long real-world interface names in the combo included: neither the
+  combo's longest item nor the overview's text lines may impose width).
 
 Run: QT_QPA_PLATFORM=offscreen python -m pytest tests/test_settings_latency.py -q
 """
@@ -48,6 +51,31 @@ ASOUNDRC_FIXTURE = """pcm.inferno {
     TX_LATENCY_NS 8000000
 }
 """
+
+# A live PipeWire estimate as read_pipewire_latency() returns it
+# (quantum 1024 @ 48000 Hz + headroom 128 → 24 ms per direction,
+# 48 ms round trip).
+PW_SAMPLE = {
+    "quantum": 1024,
+    "rate": 48000,
+    "headroom": 128,
+    "per_direction_ms": 24.0,
+    "round_trip_ms": 48.0,
+    "source": "pw-metadata",
+}
+
+# Interface names as they appear on real machines (bridges, USB and
+# WiFi adapters): their display strings are the longest the combo ever
+# holds and must not dictate the group width.
+LONG_IFACES = [
+    "br-099035d51c18", "docker0", "enx6c6e07057ee0", "wlxdc4ef407eb05",
+]
+LONG_IFACE_IPS = {
+    "br-099035d51c18": "192.168.1.100",
+    "docker0": "172.17.0.1",
+    "enx6c6e07057ee0": "192.168.178.42",
+    "wlxdc4ef407eb05": "192.168.178.23",
+}
 
 
 def _ensure_app() -> QApplication:
@@ -273,3 +301,44 @@ def test_content_fits_standard_window_without_scroll(user_home, monkeypatch):
         f"content too wide for a standard window: {sh.width()}px"
     assert sh.height() <= 560, \
         f"content too tall for a standard window: {sh.height()}px"
+
+
+def test_populated_latency_overview_fits_without_horizontal_scroll(
+        user_home, monkeypatch):
+    """(h) The populated state fits 760px too: with a live PipeWire
+    estimate in the Latency Overview and long real-world interface
+    names in the combo, neither the overview's text lines nor the
+    combo's longest item may impose width on the scroll content
+    (no horizontal scrollbar at the standard window size)."""
+    import inferno_gui.ui.settings_tab as settings_tab
+
+    _fake_interfaces(monkeypatch, LONG_IFACES, LONG_IFACE_IPS)
+    monkeypatch.setattr(
+        settings_tab, "read_pipewire_latency", lambda: PW_SAMPLE)
+
+    st = settings_tab.SettingsTab()
+    _ensure_app().processEvents()
+    st.show()
+    _ensure_app().processEvents()
+    st._refresh_latency_overview()
+    _ensure_app().processEvents()
+
+    # Guard against a false pass: the overview must really be
+    # populated from the patched estimate.
+    assert st.latency_bar.total_text() == \
+        "Total ≈ 58.0 ms (Inferno 10.0 + PipeWire round-trip ≈ 48.0)", \
+        st.latency_bar.total_text()
+    assert st.latency_bar.hint_text() == \
+        "estimated — quantum 1024 @ 48000 Hz + headroom 128", \
+        st.latency_bar.hint_text()
+
+    scroll = st.findChild(QScrollArea)
+    content = scroll.widget()
+    min_w = content.minimumSizeHint().width()
+    hint_w = content.sizeHint().width()
+    assert min_w <= 760, \
+        f"populated content minimum too wide: {min_w}px"
+    assert hint_w <= 760, \
+        f"populated content too wide: {hint_w}px"
+
+    st.hide()

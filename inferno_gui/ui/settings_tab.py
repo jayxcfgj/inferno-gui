@@ -123,6 +123,14 @@ class SettingsTab(QWidget):
         net_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.iface_combo = QComboBox()
+        # Long interface names (bridges, USB/wifi adapters with their
+        # IPs) must not dictate the group's width: the combo sizes
+        # itself to ~20 characters instead of its longest item. The
+        # full text stays readable — the popup list sizes to its items
+        # and the combo tooltip carries the current item's text.
+        self.iface_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.iface_combo.setMinimumContentsLength(20)
         self.iface_combo.setMinimumWidth(250)
         self.iface_combo.currentIndexChanged.connect(self._on_iface_changed)
         net_layout.addRow("Dante/PTP Interface:", self.iface_combo)
@@ -209,11 +217,15 @@ class SettingsTab(QWidget):
 
         # Dynamic low-latency warning, visible while either spinbox sits
         # at the 1.0 ms floor (the static tooltip carries the full text).
+        # Word wrap: the ~460px one-liner must wrap inside the group
+        # instead of imposing its width on the column (the spinbox
+        # tooltips keep the full wording at all times).
         self.latency_warning = QLabel(
             "⚠ Below ~1 ms RX underruns become likely — "
             "1.0 ms is the smallest value the GUI offers."
         )
         self.latency_warning.setStyleSheet("color: #ffc107; font-size: 11px;")
+        self.latency_warning.setWordWrap(True)
         self.latency_warning.hide()
         audio_layout.addWidget(self.latency_warning, 5, 0, 1, 4)
 
@@ -548,6 +560,10 @@ class SettingsTab(QWidget):
     def _update_ip_display(self):
         """Update IP address display for selected interface."""
         iface = self.iface_combo.currentData()
+        # Long names can be clipped in the closed combo (it sizes to
+        # ~20 characters): the full item text rides the combo tooltip;
+        # the popup shows it unclipped regardless.
+        self.iface_combo.setToolTip(self.iface_combo.currentText())
         if iface:
             ip = get_interface_ip(iface)
             if ip:
