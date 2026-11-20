@@ -25,6 +25,11 @@ Honesty contract (final review):
   ~500px against the ~345px the right column gets in a 760px window,
   and the 560px height budget has only ~3px of slack for another
   line, so the tooltip is the only place the full text fits.
+- Below the hint line a static, wrapped, muted explanation
+  (``_explanation_label`` / ``explanation_text()``) tells the reader
+  in user-approved wording what the numbers mean: one PipeWire
+  cycle, the 128-frame ALSA headroom, and that the total is the
+  full round trip excluding hardware DAC/ADC latency.
 - The tab-provided honesty note (set_context_note) stays in the
   tooltip alongside the scope text.
 
@@ -46,6 +51,18 @@ _LABEL_COLOR = QColor("#ffffff")
 # stay visible (e.g. 10 vs 0.5 ms on a narrow bar).
 _MIN_SEGMENT_PX = 8
 _STRIP_H = 16
+
+# Explanation below the total/details line (user-approved verbatim
+# wording): what one PipeWire cycle is, why the ALSA edges add the
+# headroom, and what the total covers.  Wrapped + muted like the hint
+# line; ~3 wrapped lines in the ~340px right column.
+_EXPLANATION_TEXT = (
+    "How to read this: one PipeWire cycle buffers quantum/rate "
+    "(Cable shows this as latency). Each ALSA edge adds the "
+    "128-frame headroom inferno requires. The total is the full "
+    "round trip (capture + playback), an estimate — hardware "
+    "DAC/ADC latency is not included."
+)
 
 # Scope disclosure for the tooltip: the visible lines stay compact
 # (they must fit the ~345px right-column share of a 760px window),
@@ -82,6 +99,10 @@ class LatencyBar(QWidget):
         self._total_label = QLabel("—")
         self._hint_label = QLabel("estimated")
         self._hint_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        # Static explanation under the hint line (same muted styling):
+        # it never changes with set_values, so it is built once here.
+        self._explanation_label = QLabel(_EXPLANATION_TEXT)
+        self._explanation_label.setStyleSheet("color: #aaa; font-size: 11px;")
         # The populated lines (total ≈331px, details ≈295px) must not
         # impose their one-line width on the right column of a 760px
         # window: word wrap lets them take whatever width the column
@@ -90,7 +111,8 @@ class LatencyBar(QWidget):
         # label's hint is not width-deterministic). The text stays
         # fully visible — wrapped — and the tooltip keeps the complete
         # scope disclosure either way.
-        for lab in (self._total_label, self._hint_label):
+        for lab in (self._total_label, self._hint_label,
+                    self._explanation_label):
             lab.setWordWrap(True)
             lab.setSizePolicy(
                 QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -102,6 +124,7 @@ class LatencyBar(QWidget):
         lay.setSpacing(2)
         lay.addWidget(self._total_label)
         lay.addWidget(self._hint_label)
+        lay.addWidget(self._explanation_label)
         self._update_tooltip()
 
     # ── public contract ───────────────────────────────────────
@@ -141,6 +164,10 @@ class LatencyBar(QWidget):
     def hint_text(self) -> str:
         """The "estimated" hint line shown below the total."""
         return self._hint_label.text()
+
+    def explanation_text(self) -> str:
+        """The static "how to read this" explanation below the hint."""
+        return self._explanation_label.text()
 
     def segment_widths(self, width: int) -> tuple:
         """Painted pixel widths (inferno, pipewire) at the given bar width.

@@ -18,6 +18,10 @@ fixes:
   case shows "unknown" without crashing
 - extreme scaling: 10 vs 0.5 ms keeps both segments visible via the
   minimum-width floor; zero values never divide by zero
+- the overview carries a static, wrapped, muted explanation label
+  BELOW the hint line (user-approved wording: one PipeWire cycle,
+  128-frame ALSA headroom, full round trip without hardware
+  DAC/ADC latency)
 
 Run: QT_QPA_PLATFORM=offscreen python -m pytest tests/test_latency_overview.py -q
 """
@@ -38,6 +42,16 @@ _app = QApplication.instance() or QApplication(sys.argv)
 HONESTY_NOTE = (
     "Inferno currently advertises RX and applies TX on receive — "
     "upstream FIXME; values shown are the configured ones."
+)
+
+# Verbatim explanation below the total/details line (user-approved
+# wording): tells the reader what the numbers mean.
+EXPLANATION_TEXT = (
+    "How to read this: one PipeWire cycle buffers quantum/rate "
+    "(Cable shows this as latency). Each ALSA edge adds the "
+    "128-frame headroom inferno requires. The total is the full "
+    "round trip (capture + playback), an estimate — hardware "
+    "DAC/ADC latency is not included."
 )
 
 PW_SAMPLE = {
@@ -178,6 +192,34 @@ def test_forced_details_show_effective_quantum_and_marker():
     assert "quantum 128 (forced) @ 48000 Hz + headroom 128" in tip
     assert "excludes hardware DAC/ADC latency" in tip
     assert "round-trip" in tip
+
+
+def test_explanation_label_below_hint_line(user_home, monkeypatch):
+    """The overview carries a wrapped, muted explanation label BELOW
+    the total/details line so the numbers are readable without the
+    tooltip: what one PipeWire cycle is, why the ALSA edges add the
+    128-frame headroom, and that the total is the full round trip
+    (hardware DAC/ADC latency not included).  Same muted styling as
+    the hint line, word-wrapped to the ~340px right column."""
+    st = _make_tab(monkeypatch, user_home)
+
+    bar = st.latency_bar
+    text = bar.explanation_text()
+    for phrase in ("one PipeWire cycle", "128-frame headroom",
+                   "full round trip"):
+        assert phrase in text, f"missing {phrase!r} in: {text}"
+    assert text == EXPLANATION_TEXT
+
+    label = bar._explanation_label
+    assert label.wordWrap(), "the explanation must wrap (right column)"
+    # same muted styling as the hint label
+    assert label.styleSheet() == "color: #aaa; font-size: 11px;", \
+        label.styleSheet()
+
+    # it sits below the hint line in the bar's own layout
+    lay = bar.layout()
+    assert lay.indexOf(label) > lay.indexOf(bar._hint_label), \
+        "the explanation must come after the hint line"
 
 
 def test_unforced_details_keep_current_wording():

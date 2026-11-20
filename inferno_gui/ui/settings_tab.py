@@ -458,6 +458,15 @@ class SettingsTab(QWidget):
         latency_group.setToolTip(_LATENCY_HONESTY_NOTE)
         self.latency_bar.set_context_note(_LATENCY_HONESTY_NOTE)
         latency_layout.addWidget(self.latency_bar)
+        # Minimum width (not compactness): the overview's explanation
+        # label wraps to ~9 lines at the ~178px the group got at the
+        # minimal default window, pushing the right column's minimum
+        # ~14px past the 621px content height the default window is
+        # sized for (a vertical scrollbar appeared).  At 240px it wraps
+        # to ~7 lines and the column's minimum stays under the
+        # left-driven height — while remaining inside the ≤350px
+        # right-column budget and the ≤720px/≤760px content budgets.
+        latency_group.setMinimumWidth(240)
 
         # ── Right column container ──────────────────────────────
         # A nested column rather than flat grid rows: in a flat grid the
