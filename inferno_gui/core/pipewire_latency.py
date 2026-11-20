@@ -2,10 +2,13 @@
 
 Shells out to ``sudo -u <user> env K=V ... pw-metadata -n settings`` and
 derives an estimate of the round-trip latency caused by the PipeWire
-quantum:
+quantum.  With an app forcing the quantum (``clock.force-quantum`` ≠ 0)
+the EFFECTIVE quantum is the forced value (``clock.quantum`` still reads
+the base value), so the math follows the effective one:
 
-    per_direction_ms = (quantum + headroom) / rate * 1000
-    round_trip_ms    = 2 * per_direction_ms
+    effective_quantum = force_quantum if force_quantum > 0 else quantum
+    per_direction_ms  = (effective_quantum + headroom) / rate * 1000
+    round_trip_ms     = 2 * per_direction_ms
 
 The headroom covers scheduling/callback overhead that is not part of
 the quantum itself (default 128 frames). This module never writes
@@ -51,10 +54,16 @@ _LOG = logging.getLogger(__name__)
 # quoted form (``key:'clock.quantum' value:'1024'``) printed by newer
 # builds. Both regexes accept either. Decoy keys stay safe because
 # every alternation starts with the literal key name (``clock\.quantum``
-# never matches ``clock.force-quantum``, and ``key:'clock\.quantum'``
-# never matches ``key:'clock.force-quantum'``).
+# never matches ``clock.min-quantum``/``clock.max-quantum``, and
+# ``key:'clock\.quantum'`` never matches ``key:'clock.min-quantum'``).
+# ``clock.force-quantum`` is a PARSED key (see _FORCE_QUANTUM_RE), not
+# a decoy: when an app forces the quantum the effective quantum is the
+# forced value, not ``clock.quantum``.
 _QUANTUM_RE = re.compile(r"(?:clock\.quantum\s*=\s*|key:'clock\.quantum'\s+value:')(\d+)")
 _RATE_RE = re.compile(r"(?:clock\.rate\s*=\s*|key:'clock\.rate'\s+value:')(\d+)")
+_FORCE_QUANTUM_RE = re.compile(
+    r"(?:clock\.force-quantum\s*=\s*|key:'clock\.force-quantum'\s+value:')(\d+)"
+)
 
 _TIMEOUT_S = 2
 _SOURCE = "pw-metadata"
@@ -93,11 +102,21 @@ def _output_tail(proc, limit: int = 200) -> str:
 def read_pipewire_latency(headroom_frames: int = 128):
     """Estimate PipeWire graph latency from the current quantum/rate.
 
-    Returns a dict with keys ``quantum`` (int|None), ``rate`` (int|None),
-    ``headroom`` (int), ``per_direction_ms`` (float|None),
-    ``round_trip_ms`` (float|None) and ``source`` (str|None), or None
-    when the values are unknown (tool missing/nonzero exit/timeout/
-    unparseable output).
+    Returns a dict with keys ``quantum`` (int|None, the BASE
+    ``clock.quantum``), ``rate`` (int|None), ``headroom`` (int),
+    ``force_quantum`` (int|None — None when ``clock.force-quantum`` is
+    absent), ``forced`` (bool — True when force-quantum > 0),
+    ``per_direction_ms`` (float|None), ``round_trip_ms`` (float|None)
+    and ``source`` (str|None), or None when the values are unknown
+    (tool missing/nonzero exit/timeout/unparseable output).
+
+    The math uses the EFFECTIVE quantum — with an app forcing the
+    quantum (``clock.force-quantum`` ≠ 0, e.g. the Cable app setting
+    128) PipeWire runs the forced value while ``clock.quantum`` still
+    reads the base value, so::
+
+        effective_quantum = force_quantum if force_quantum > 0 else quantum
+        per_direction_ms  = (effective_quantum + headroom) / rate * 1000
     """
     try:
         proc = subprocess.run(
@@ -152,7 +171,18 @@ def read_pipewire_latency(headroom_frames: int = 128):
             )
             return None
 
-        per_direction_ms = (quantum + headroom_frames) * 1000 / rate
+        # clock.force-quantum is optional: absent → None (older
+        # PipeWire never prints it); 0 → not forced (PipeWire's own
+        # "no force" value).
+        force_match = _FORCE_QUANTUM_RE.search(output)
+        force_quantum = int(force_match.group(1)) if force_match else None
+        forced = force_quantum is not None and force_quantum > 0
+
+        # The effective quantum is the forced value when one is set
+        # (real user case: the Cable app forced 128 while
+        # clock.quantum still read 1024), otherwise the base value.
+        effective_quantum = force_quantum if forced else quantum
+        per_direction_ms = (effective_quantum + headroom_frames) * 1000 / rate
     except (TypeError, ValueError) as exc:
         # Non-text output (decode) or non-numeric captures (parse):
         # degrade to "unknown" instead of raising.
@@ -163,6 +193,8 @@ def read_pipewire_latency(headroom_frames: int = 128):
         "quantum": quantum,
         "rate": rate,
         "headroom": headroom_frames,
+        "force_quantum": force_quantum,
+        "forced": forced,
         "per_direction_ms": per_direction_ms,
         "round_trip_ms": 2 * per_direction_ms,
         "source": _SOURCE,

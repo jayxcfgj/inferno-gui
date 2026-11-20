@@ -16,6 +16,8 @@ import subprocess
 import sys
 import unittest.mock as mock
 
+import pytest
+
 from inferno_gui.core import pipewire_latency
 
 
@@ -45,6 +47,38 @@ QUOTED_FIXTURE_OUTPUT = (
     "update: id:0 key:'clock.force-quantum' value:'0' type:''\n"
 )
 
+# Real user observation: the Cable app set clock.force-quantum = 128
+# (was 0) — with force-quantum ≠ 0 the EFFECTIVE quantum is the forced
+# value (128), while clock.quantum still reads 1024.  The estimate must
+# follow the effective quantum, not the base one.
+QUOTED_FORCED_OUTPUT = (
+    'Found "settings" metadata 33\n'
+    "update: id:0 key:'log.level' value:'2' type:''\n"
+    "update: id:0 key:'clock.rate' value:'48000' type:''\n"
+    "update: id:0 key:'clock.allowed-rates' value:'[ 48000 ]' type:''\n"
+    "update: id:0 key:'clock.quantum' value:'1024' type:''\n"
+    "update: id:0 key:'clock.min-quantum' value:'32' type:''\n"
+    "update: id:0 key:'clock.max-quantum' value:'2048' type:''\n"
+    "update: id:0 key:'clock.force-quantum' value:'128' type:''\n"
+)
+
+# Plain format with a live forced quantum (classic pw-metadata output).
+PLAIN_FORCED_OUTPUT = (
+    "  clock.force-quantum = 128\n"
+    "  clock.quantum = 1024\n"
+    "  clock.max-quantum = 2048\n"
+    "  clock.rate = 48000\n"
+    "  clock.force-rate = 0\n"
+    "  clock.max-rate = 96000\n"
+)
+
+# Quoted output WITHOUT any force-quantum line (older PipeWire): the
+# key is absent → force_quantum None, forced False, math unchanged.
+QUOTED_NO_FORCE_OUTPUT = (
+    "update: id:0 key:'clock.rate' value:'48000' type:''\n"
+    "update: id:0 key:'clock.quantum' value:'1024' type:''\n"
+)
+
 
 def _patch_run(stdout, returncode=0):
     """Patch subprocess.run to return a completed result with stdout."""
@@ -59,6 +93,8 @@ def test_parses_quantum_rate_and_math():
         "quantum": 1024,
         "rate": 48000,
         "headroom": 128,
+        "force_quantum": 0,
+        "forced": False,
         "per_direction_ms": 24.0,
         "round_trip_ms": 48.0,
         "source": "pw-metadata",
@@ -70,6 +106,7 @@ def test_custom_headroom_used_in_math():
         result = pipewire_latency.read_pipewire_latency(headroom_frames=256)
     assert result is not None
     assert result["headroom"] == 256
+    assert result["forced"] is False, "force-quantum 0 must not count as forced"
     assert result["per_direction_ms"] == (1024 + 256) / 48000 * 1000
     assert result["round_trip_ms"] == 2 * result["per_direction_ms"]
 
@@ -84,36 +121,111 @@ def test_parses_quoted_metadata_format():
         "quantum": 1024,
         "rate": 48000,
         "headroom": 128,
+        "force_quantum": 0,
+        "forced": False,
         "per_direction_ms": 24.0,
         "round_trip_ms": 48.0,
         "source": "pw-metadata",
     }
 
 
+# ── forced quantum → effective quantum ────────────────────────
+# Real user case: an app (Cable) set clock.force-quantum = 128 while
+# clock.quantum still reads 1024 — the effective quantum is the FORCED
+# value, so the estimate must use 128, expose force_quantum/forced,
+# and keep the base quantum in `quantum`.
+
+
+def test_forced_quantum_drives_effective_math():
+    """force-quantum 128 (quoted) → effective 128 → per direction
+    (128 + 128)/48000*1000 = 5.333…, round trip 10.666…, forced=True;
+    the base quantum (1024) stays in `quantum`."""
+    with _patch_run(QUOTED_FORCED_OUTPUT):
+        result = pipewire_latency.read_pipewire_latency()
+    assert result is not None
+    assert result["quantum"] == 1024, "quantum keeps the BASE value"
+    assert result["force_quantum"] == 128
+    assert result["forced"] is True
+    assert result["per_direction_ms"] == (128 + 128) * 1000 / 48000
+    assert result["round_trip_ms"] == 2 * (128 + 128) * 1000 / 48000
+    assert result["per_direction_ms"] == pytest.approx(5.333, abs=1e-3)
+    assert result["round_trip_ms"] == pytest.approx(10.667, abs=1e-3)
+
+
+def test_forced_quantum_plain_format_parsed_too():
+    """The plain format carries the same user observation: a forced
+    quantum of 128 must drive the estimate in either output shape."""
+    with _patch_run(PLAIN_FORCED_OUTPUT):
+        result = pipewire_latency.read_pipewire_latency()
+    assert result is not None
+    assert result["force_quantum"] == 128
+    assert result["forced"] is True
+    assert result["per_direction_ms"] == (128 + 128) * 1000 / 48000
+    assert result["round_trip_ms"] == 2 * (128 + 128) * 1000 / 48000
+
+
+def test_zero_force_quantum_uses_base_quantum():
+    """force-quantum 0 → NOT forced: the effective quantum falls back
+    to the base clock.quantum (1024), math unchanged (24.0/48.0)."""
+    with _patch_run(QUOTED_FIXTURE_OUTPUT):
+        result = pipewire_latency.read_pipewire_latency()
+    assert result is not None
+    assert result["force_quantum"] == 0
+    assert result["forced"] is False
+    assert result["per_direction_ms"] == 24.0
+    assert result["round_trip_ms"] == 48.0
+
+
+def test_force_quantum_key_absent_is_none():
+    """No force-quantum line at all (older PipeWire): force_quantum
+    is None, forced False, and the math keeps using clock.quantum."""
+    with _patch_run(QUOTED_NO_FORCE_OUTPUT):
+        result = pipewire_latency.read_pipewire_latency()
+    assert result is not None
+    assert result["force_quantum"] is None
+    assert result["forced"] is False
+    assert result["per_direction_ms"] == 24.0
+    assert result["round_trip_ms"] == 48.0
+
+
 def test_plain_decoy_keys_not_matched():
-    """Decoy keys (force/min/max variants) must never satisfy the read,
-    in either output format."""
+    """Remaining decoy keys (min/max-quantum, allowed-rates, force-rate,
+    max-rate — force-quantum is a PARSED key now) must never satisfy the
+    read in either output format."""
     decoy_output = (
-        "  clock.force-quantum = 0\n"
         "  clock.min-quantum = 32\n"
         "  clock.max-quantum = 2048\n"
+        "  clock.allowed-rates = [ 48000 ]\n"
         "  clock.force-rate = 0\n"
         "  clock.max-rate = 96000\n"
+        "  log.level = 2\n"
     )
     with _patch_run(decoy_output):
         assert pipewire_latency.read_pipewire_latency() is None
 
 
 def test_quoted_decoy_keys_not_matched():
-    """Quoted decoy lines (``key:'clock.force-quantum' value:'0'`` etc.)
-    must never be picked up as the quantum/rate values."""
+    """Quoted decoy lines (``key:'clock.min-quantum' value:'32'`` etc.)
+    must never be picked up as the quantum/rate values.  force-quantum
+    is a parsed key now, so the decoy set is the remaining keys:
+    min/max-quantum, allowed-rates, force-rate, max-rate, log.level."""
     decoy_output = (
+        "update: id:0 key:'log.level' value:'2' type:''\n"
         "update: id:0 key:'clock.min-quantum' value:'32' type:''\n"
         "update: id:0 key:'clock.max-quantum' value:'2048' type:''\n"
-        "update: id:0 key:'clock.force-quantum' value:'0' type:''\n"
+        "update: id:0 key:'clock.allowed-rates' value:'[ 48000 ]' type:''\n"
+        "update: id:0 key:'clock.force-rate' value:'0' type:''\n"
         "update: id:0 key:'clock.max-rate' value:'96000' type:''\n"
     )
     with _patch_run(decoy_output):
+        assert pipewire_latency.read_pipewire_latency() is None
+
+
+def test_force_quantum_alone_cannot_satisfy_the_read():
+    """A force-quantum line (now parsed) is OPTIONAL: without
+    clock.quantum AND clock.rate the read still degrades to None —
+    the forced value alone never completes the estimate."""
+    with _patch_run("  clock.force-quantum = 128\n"):
         assert pipewire_latency.read_pipewire_latency() is None
 
 

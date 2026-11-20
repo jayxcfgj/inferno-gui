@@ -16,9 +16,12 @@ Honesty contract (final review):
   ``Total unknown (Inferno RX X ms + PipeWire: unknown)``.
 - ``set_values(..., details=...)`` surfaces the estimate's basis
   (quantum/rate/headroom) in a compact visible hint line,
-  ``estimated — quantum 1024 @ 48000 Hz + headroom 128``; the *full*
-  scope disclosure — including that hardware DAC/ADC latency is
-  excluded — rides the tooltip instead: a full visible line measures
+  ``estimated — quantum 1024 @ 48000 Hz + headroom 128``; when an app
+  forces the quantum (``forced`` in the details dict) the line shows
+  the EFFECTIVE value with a marker — ``estimated — quantum 128
+  (forced) @ 48000 Hz + headroom 128``; the *full* scope disclosure —
+  including that hardware DAC/ADC latency is excluded — rides the
+  tooltip instead: a full visible line measures
   ~500px against the ~345px the right column gets in a 760px window,
   and the 560px height budget has only ~3px of slack for another
   line, so the tooltip is the only place the full text fits.
@@ -226,12 +229,27 @@ class LatencyBar(QWidget):
             self.inferno_fraction, self.pipewire_fraction = 0.0, 0.0
 
     def _quantum_line(self) -> str | None:
-        """Compact basis of the estimate, or None without details."""
+        """Compact basis of the estimate, or None without details.
+
+        Forced quantum: when an app forces the quantum
+        (``clock.force-quantum`` > 0) the EFFECTIVE quantum is the
+        forced value while ``clock.quantum`` still reads the base one
+        — the line shows the effective value with a ``(forced)``
+        marker, so the number matches what the graph actually runs.
+        """
         d = self._pw_details or {}
         quantum, rate = d.get("quantum"), d.get("rate")
         if quantum is None or rate is None:
             return None
-        return f"quantum {quantum} @ {rate} Hz + headroom {d.get('headroom')}"
+        headroom = d.get("headroom")
+        if d.get("forced"):
+            # forced → the effective quantum is the forced value
+            effective = d.get("force_quantum") or quantum
+            return (
+                f"quantum {effective} (forced) @ {rate} Hz "
+                f"+ headroom {headroom}"
+            )
+        return f"quantum {quantum} @ {rate} Hz + headroom {headroom}"
 
     def _scope_text(self) -> str:
         """Full scope of the PipeWire estimate (tooltip text)."""

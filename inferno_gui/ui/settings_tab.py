@@ -80,6 +80,12 @@ _LATENCY_HONESTY_NOTE = (
 # compact 770px layout is unchanged.
 _CONTENT_MAX_WIDTH = 980
 
+# Live-refresh cadence for the Latency Overview while the settings
+# tab is VISIBLE (user expectation: the estimate must track quantum
+# changes made while the tab is open — e.g. an app forcing the
+# quantum — not only repaint on every tab re-entry).
+_LATENCY_REFRESH_MS = 5000
+
 
 class SettingsTab(QWidget):
     """Settings tab for configuring Inferno and statime."""
@@ -96,6 +102,9 @@ class SettingsTab(QWidget):
         self.inferno_config = InfernoConfig()
         self._dirty = False
         self._original_values = {}
+        # The single live-refresh timer for the Latency Overview,
+        # created lazily by the first showEvent (see _ensure_latency_timer).
+        self._latency_timer = None
         self._init_ui()
         self.load_settings()
         # NOTE: the Latency Overview is NOT refreshed here — querying
@@ -560,10 +569,43 @@ class SettingsTab(QWidget):
             details=pw,
         )
 
+    def _ensure_latency_timer(self) -> QTimer:
+        """The single live-refresh timer, created lazily on first show.
+
+        One instance only: repeated showEvents reuse it instead of
+        stacking timers; hideEvent/closeEvent stop it (showEvent
+        restarts it).  Parent is the tab, so its lifetime follows the
+        tab's.
+        """
+        if self._latency_timer is None:
+            timer = QTimer(self)
+            timer.setInterval(_LATENCY_REFRESH_MS)
+            timer.timeout.connect(self._refresh_latency_overview)
+            self._latency_timer = timer
+        return self._latency_timer
+
     def showEvent(self, event):
-        """Refresh the latency overview whenever the tab is shown."""
+        """Refresh the latency overview whenever the tab is shown, and
+        keep it LIVE: a 5000 ms timer re-reads pw-metadata while the
+        tab stays visible, so the estimate tracks quantum changes made
+        while the tab is open (e.g. an app forcing the quantum)."""
         super().showEvent(event)
         self._refresh_latency_overview()
+        timer = self._ensure_latency_timer()
+        if not timer.isActive():
+            timer.start()
+
+    def hideEvent(self, event):
+        """Stop the live refresh while the tab is hidden."""
+        if self._latency_timer is not None:
+            self._latency_timer.stop()
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        """Stop the live refresh when the tab closes."""
+        if self._latency_timer is not None:
+            self._latency_timer.stop()
+        super().closeEvent(event)
 
     def _open_pw_override(self):
         """Open the PipeWire override in the user's session."""

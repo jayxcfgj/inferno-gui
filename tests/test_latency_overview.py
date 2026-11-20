@@ -49,6 +49,20 @@ PW_SAMPLE = {
     "source": "pw-metadata",
 }
 
+# A live estimate WITH a forced quantum, as read_pipewire_latency()
+# returns it when an app sets clock.force-quantum = 128 (the Cable
+# user observation): the effective quantum is 128, forced=True.
+PW_FORCED_SAMPLE = {
+    "quantum": 1024,
+    "rate": 48000,
+    "headroom": 128,
+    "force_quantum": 128,
+    "forced": True,
+    "per_direction_ms": 5.333333333333333,
+    "round_trip_ms": 10.666666666666666,
+    "source": "pw-metadata",
+}
+
 
 def _ensure_app() -> QApplication:
     return _app
@@ -145,6 +159,38 @@ def test_details_surface_quantum_and_scope_disclosure():
     assert "quantum 1024 @ 48000 Hz + headroom 128" in tip
     assert "excludes hardware DAC/ADC latency" in tip
     assert "round-trip" in tip
+
+
+def test_forced_details_show_effective_quantum_and_marker():
+    """Forced quantum (the Cable user case): the details line shows
+    the EFFECTIVE quantum with a "(forced)" marker — the number the
+    graph actually runs, not the base clock.quantum."""
+    from inferno_gui.ui.latency_overview import LatencyBar
+    bar = LatencyBar()
+    bar.set_values(10.0, 10.666666666666666, details=PW_FORCED_SAMPLE)
+
+    assert bar.hint_text() == \
+        "estimated — quantum 128 (forced) @ 48000 Hz + headroom 128"
+
+    # the tooltip basis follows the effective quantum too, with the
+    # full scope disclosure unchanged
+    tip = bar.toolTip()
+    assert "quantum 128 (forced) @ 48000 Hz + headroom 128" in tip
+    assert "excludes hardware DAC/ADC latency" in tip
+    assert "round-trip" in tip
+
+
+def test_unforced_details_keep_current_wording():
+    """force-quantum 0 (present but not forcing): the wording stays
+    the current one, base quantum, no marker."""
+    from inferno_gui.ui.latency_overview import LatencyBar
+    details = dict(PW_SAMPLE, force_quantum=0, forced=False)
+    bar = LatencyBar()
+    bar.set_values(10.0, 48.0, details=details)
+
+    assert bar.hint_text() == \
+        "estimated — quantum 1024 @ 48000 Hz + headroom 128"
+    assert "(forced)" not in bar.hint_text()
 
 
 def test_set_values_unknown_pipewire_segment_absent():
@@ -279,4 +325,106 @@ def test_show_event_refreshes_latency_overview(user_home, monkeypatch):
     tip = st.latency_bar.toolTip()
     assert "excludes hardware DAC/ADC latency" in tip
     assert HONESTY_NOTE in tip
+    st.hide()
+
+
+# ── live refresh while the tab is visible ─────────────────────
+# User expectation: the estimate must track quantum changes made
+# while the settings tab stays open, not only repaint on every tab
+# re-entry.  A single QTimer (5000 ms, parented to the tab) re-reads
+# pw-metadata; hideEvent/closeEvent stop it; repeated showEvents
+# reuse the one instance instead of stacking timers.
+
+
+def _refresh_timer(st):
+    """The single live-refresh QTimer of a shown SettingsTab."""
+    from PyQt6.QtCore import QTimer
+    timers = [t for t in st.findChildren(QTimer) if t.interval() == 5000]
+    assert len(timers) == 1, \
+        f"expected exactly one 5000 ms refresh timer, got {len(timers)}"
+    return timers[0]
+
+
+def test_show_event_starts_single_refresh_timer(user_home, monkeypatch):
+    """(a)+(b) showEvent starts exactly ONE refresh timer (5000 ms,
+    parent = the tab); repeated showEvents reuse it, never stack a
+    second one."""
+    from PyQt6.QtCore import QTimer
+
+    st = _make_tab(monkeypatch, user_home)
+    assert st.findChildren(QTimer) == [], \
+        "the refresh timer must not exist before the first showEvent"
+
+    st.show()
+    _ensure_app().processEvents()
+    timer = _refresh_timer(st)
+    assert timer.parent() is st, "the timer must be parented to the tab"
+    assert timer.isActive(), "showEvent must START the refresh timer"
+
+    # repeated show/hide cycles must not stack a second timer
+    st.hide()
+    st.show()
+    _ensure_app().processEvents()
+    timer_after = _refresh_timer(st)
+    assert timer_after is timer, \
+        "repeated showEvents must reuse the single timer instance"
+
+
+def test_timer_timeout_refreshes_latency_overview(user_home, monkeypatch):
+    """(c) The timer's timeout triggers read_pipewire_latency (patched
+    — no real shelling) and updates the bar while the tab stays
+    visible: values that change after the tab opened (the forced
+    quantum case) reach the overview without a tab switch."""
+    import inferno_gui.ui.settings_tab as settings_tab
+    state = {"pw": None, "calls": 0}
+
+    def fake_read():
+        state["calls"] += 1
+        return state["pw"]
+
+    _fake_interfaces(monkeypatch, ["eth0"], {"eth0": "10.0.0.1"})
+    monkeypatch.setattr(settings_tab, "read_pipewire_latency", fake_read)
+    st = settings_tab.SettingsTab()
+    st.show()
+    _ensure_app().processEvents()
+
+    timer = _refresh_timer(st)
+    calls_before = state["calls"]
+
+    # the forced estimate arrives AFTER the tab is already open
+    state["pw"] = PW_FORCED_SAMPLE
+    timer.timeout.emit()  # call the timeout slot directly
+    _ensure_app().processEvents()
+
+    assert state["calls"] == calls_before + 1, \
+        "the timer timeout must re-read pw-metadata"
+    assert st.latency_bar.hint_text() == \
+        "estimated — quantum 128 (forced) @ 48000 Hz + headroom 128"
+    assert st.latency_bar.total_text() == \
+        "Total ≈ 20.7 ms (Inferno 10.0 + PipeWire round-trip ≈ 10.7)"
+    st.hide()
+
+
+def test_hide_and_close_stop_refresh_timer(user_home, monkeypatch):
+    """(d) hideEvent stops the timer (no reads while the tab is
+    hidden); a later showEvent restarts it; closeEvent stops it too."""
+    from PyQt6.QtGui import QCloseEvent
+
+    st = _make_tab(monkeypatch, user_home)
+    st.show()
+    _ensure_app().processEvents()
+    timer = _refresh_timer(st)
+    assert timer.isActive()
+
+    st.hide()
+    _ensure_app().processEvents()
+    assert not timer.isActive(), "hideEvent must stop the refresh timer"
+
+    st.show()
+    _ensure_app().processEvents()
+    assert timer.isActive(), \
+        "a later showEvent must restart the SAME timer"
+
+    st.closeEvent(QCloseEvent())
+    assert not timer.isActive(), "closeEvent must stop the refresh timer"
     st.hide()
