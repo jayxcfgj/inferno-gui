@@ -24,6 +24,8 @@ class InfernoConfig:
         'sample_rate': 48000,
         'tx_channels': 24,
         'rx_channels': 24,
+        'rx_latency_ns': 10_000_000,
+        'tx_latency_ns': 10_000_000,
         'bind_ip': '',
         'device_name': 'Inferno',
     }
@@ -64,6 +66,8 @@ class InfernoConfig:
             'sample_rate': r'SAMPLE_RATE\s+"([^"]+)"',
             'tx_channels': r'TX_CHANNELS\s+(\d+)',
             'rx_channels': r'RX_CHANNELS\s+(\d+)',
+            'rx_latency_ns': r'RX_LATENCY_NS\s+([^\n]*)',
+            'tx_latency_ns': r'TX_LATENCY_NS\s+([^\n]*)',
             'bind_ip': r'BIND_IP\s+"([^"]+)"',
         }
         
@@ -73,6 +77,14 @@ class InfernoConfig:
                 value = match.group(1)
                 if key in ('sample_rate', 'tx_channels', 'rx_channels'):
                     self._data[key] = int(value)
+                elif key in ('rx_latency_ns', 'tx_latency_ns'):
+                    # Integer nanoseconds; malformed values (non-integer
+                    # text, empty, floats) keep the 10 ms default rather
+                    # than raising — Inferno falls back the same way.
+                    try:
+                        self._data[key] = int(value.strip())
+                    except ValueError:
+                        pass
                 else:
                     self._data[key] = value
     
@@ -104,6 +116,9 @@ class InfernoConfig:
 
     TX_CHANNELS {self._data['tx_channels']}
     RX_CHANNELS {self._data['rx_channels']}
+
+    RX_LATENCY_NS {self._data['rx_latency_ns']}
+    TX_LATENCY_NS {self._data['tx_latency_ns']}
 
     BIND_IP "{self._data['bind_ip']}"
 
