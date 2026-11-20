@@ -31,6 +31,20 @@ FIXTURE_OUTPUT = (
     "  clock.max-rate = 96000\n"
 )
 
+# Fixture from a self-built PipeWire >= 1.4.11: newer pw-metadata prints
+# the QUOTED format (`key:'...' value:'...'` lines) instead of the plain
+# `key = value` form.
+QUOTED_FIXTURE_OUTPUT = (
+    'Found "settings" metadata 33\n'
+    "update: id:0 key:'log.level' value:'2' type:''\n"
+    "update: id:0 key:'clock.rate' value:'48000' type:''\n"
+    "update: id:0 key:'clock.allowed-rates' value:'[ 48000 ]' type:''\n"
+    "update: id:0 key:'clock.quantum' value:'1024' type:''\n"
+    "update: id:0 key:'clock.min-quantum' value:'32' type:''\n"
+    "update: id:0 key:'clock.max-quantum' value:'2048' type:''\n"
+    "update: id:0 key:'clock.force-quantum' value:'0' type:''\n"
+)
+
 
 def _patch_run(stdout, returncode=0):
     """Patch subprocess.run to return a completed result with stdout."""
@@ -58,6 +72,49 @@ def test_custom_headroom_used_in_math():
     assert result["headroom"] == 256
     assert result["per_direction_ms"] == (1024 + 256) / 48000 * 1000
     assert result["round_trip_ms"] == 2 * result["per_direction_ms"]
+
+
+def test_parses_quoted_metadata_format():
+    """Newer PipeWire (>= 1.4.11) prints the quoted format
+    ``key:'clock.quantum' value:'1024'`` instead of ``clock.quantum =
+    1024`` — the parser must accept either shape."""
+    with _patch_run(QUOTED_FIXTURE_OUTPUT):
+        result = pipewire_latency.read_pipewire_latency()
+    assert result == {
+        "quantum": 1024,
+        "rate": 48000,
+        "headroom": 128,
+        "per_direction_ms": 24.0,
+        "round_trip_ms": 48.0,
+        "source": "pw-metadata",
+    }
+
+
+def test_plain_decoy_keys_not_matched():
+    """Decoy keys (force/min/max variants) must never satisfy the read,
+    in either output format."""
+    decoy_output = (
+        "  clock.force-quantum = 0\n"
+        "  clock.min-quantum = 32\n"
+        "  clock.max-quantum = 2048\n"
+        "  clock.force-rate = 0\n"
+        "  clock.max-rate = 96000\n"
+    )
+    with _patch_run(decoy_output):
+        assert pipewire_latency.read_pipewire_latency() is None
+
+
+def test_quoted_decoy_keys_not_matched():
+    """Quoted decoy lines (``key:'clock.force-quantum' value:'0'`` etc.)
+    must never be picked up as the quantum/rate values."""
+    decoy_output = (
+        "update: id:0 key:'clock.min-quantum' value:'32' type:''\n"
+        "update: id:0 key:'clock.max-quantum' value:'2048' type:''\n"
+        "update: id:0 key:'clock.force-quantum' value:'0' type:''\n"
+        "update: id:0 key:'clock.max-rate' value:'96000' type:''\n"
+    )
+    with _patch_run(decoy_output):
+        assert pipewire_latency.read_pipewire_latency() is None
 
 
 def test_missing_tool_returns_none():

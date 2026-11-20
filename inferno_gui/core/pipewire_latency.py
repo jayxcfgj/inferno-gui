@@ -46,8 +46,15 @@ from inferno_gui.core.pipewire_env import (
 
 _LOG = logging.getLogger(__name__)
 
-_QUANTUM_RE = re.compile(r"clock\.quantum\s*=\s*(\d+)")
-_RATE_RE = re.compile(r"clock\.rate\s*=\s*(\d+)")
+# pw-metadata output comes in two shapes depending on the PipeWire
+# version: the classic plain form (``clock.quantum = 1024``) and a
+# quoted form (``key:'clock.quantum' value:'1024'``) printed by newer
+# builds. Both regexes accept either. Decoy keys stay safe because
+# every alternation starts with the literal key name (``clock\.quantum``
+# never matches ``clock.force-quantum``, and ``key:'clock\.quantum'``
+# never matches ``key:'clock.force-quantum'``).
+_QUANTUM_RE = re.compile(r"(?:clock\.quantum\s*=\s*|key:'clock\.quantum'\s+value:')(\d+)")
+_RATE_RE = re.compile(r"(?:clock\.rate\s*=\s*|key:'clock\.rate'\s+value:')(\d+)")
 
 _TIMEOUT_S = 2
 _SOURCE = "pw-metadata"
