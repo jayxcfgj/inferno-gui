@@ -71,6 +71,16 @@ _LATENCY_HONESTY_NOTE = (
     "upstream FIXME; values shown are the configured ones."
 )
 
+# Width cap for the two-column scroll content (user report: on a
+# wide/maximized window every group stretched to ~937px and the sparse
+# right column looked absurdly wide).  980 with the 3:2 column stretch
+# gives a balanced split — left ≈ 572px, right ≈ 382px — comfortably
+# above the ~330px where the right column would feel cramped (a 1000
+# cap only buys +20px, so 980 stays).  Small windows never notice:
+# the construction sizeHint (~701px) sits far below the cap, so the
+# standard 760px layout is unchanged.
+_CONTENT_MAX_WIDTH = 980
+
 
 class SettingsTab(QWidget):
     """Settings tab for configuring Inferno and statime."""
@@ -101,7 +111,17 @@ class SettingsTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        # Capped content centers in wide viewports instead of hugging
+        # the left edge.  Vertical behavior is unchanged: AlignTop
+        # keeps the content anchored where the trailing stretch row
+        # already held it, and the fallback scroll bar still appears
+        # for windows shorter than the content.
+        scroll.setAlignment(
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         content = QWidget()
+        # Cap the content so wide/maximized windows do not stretch
+        # every group to the viewport (see _CONTENT_MAX_WIDTH).
+        content.setMaximumWidth(_CONTENT_MAX_WIDTH)
         # Two-column arrangement (user-approved layout contract):
         #   left column  — Network Interface, Audio Parameters,
         #                  Advanced statime Options
@@ -420,11 +440,15 @@ class SettingsTab(QWidget):
         grid.addWidget(adv_group, 2, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(right_column, 0, 1, 3, 1)
 
-        # Balanced columns: extra width splits evenly; spare height
-        # collects in the trailing stretch row so the groups stay top-
-        # aligned.
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+        # Column stretch 3:2 (not 1:1): the dense left groups (Network,
+        # Audio, Advanced) keep ~60% of the capped width while the
+        # sparser right column (Latency Overview, Actions, Config
+        # Files) stays visibly narrower — equal stretch gave both
+        # columns the same width, which looked absurd on wide windows.
+        # Spare height still collects in the trailing stretch row so
+        # the groups stay top-aligned.
+        grid.setColumnStretch(0, 3)
+        grid.setColumnStretch(1, 2)
         grid.setRowStretch(3, 1)
 
         scroll.setWidget(content)

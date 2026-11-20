@@ -11,6 +11,10 @@ Covers the latency-visualization Task 3 contract:
   with the Latency Overview POPULATED from a live PipeWire estimate
   (long real-world interface names in the combo included: neither the
   combo's longest item nor the overview's text lines may impose width).
+- on wide/maximized windows the scroll content is capped (980px) and
+  centered instead of stretching to the viewport: the right column
+  stays strictly narrower than the left, no horizontal scrollbar
+  appears at 1900px, and resizing back to 760x560 changes nothing.
 
 Run: QT_QPA_PLATFORM=offscreen python -m pytest tests/test_settings_latency.py -q
 """
@@ -340,5 +344,62 @@ def test_populated_latency_overview_fits_without_horizontal_scroll(
         f"populated content minimum too wide: {min_w}px"
     assert hint_w <= 760, \
         f"populated content too wide: {hint_w}px"
+
+    st.hide()
+
+
+def test_wide_window_caps_content_and_keeps_right_column_narrower(
+        user_home, monkeypatch):
+    """(i) A wide/maximized window must not stretch the two-column
+    content to the viewport: the scroll content stays within its
+    980px cap, the right column (Latency Overview) stays strictly
+    NARROWER than the left column (Network Interface), and no
+    horizontal scrollbar appears; resizing back to the standard
+    760x560 leaves the construction behavior untouched (no horizontal
+    scrollbar there either)."""
+    import inferno_gui.ui.settings_tab as settings_tab
+
+    _fake_interfaces(monkeypatch, LONG_IFACES, LONG_IFACE_IPS)
+    monkeypatch.setattr(
+        settings_tab, "read_pipewire_latency", lambda: PW_SAMPLE)
+
+    st = settings_tab.SettingsTab()
+    _ensure_app().processEvents()
+    st.show()
+    _ensure_app().processEvents()
+    st._refresh_latency_overview()
+    _ensure_app().processEvents()
+
+    # Guard against a false pass: the overview must really be
+    # populated from the patched estimate (the populated state is the
+    # widest the right column ever gets).
+    assert st.latency_bar.total_text() == \
+        "Total ≈ 58.0 ms (Inferno 10.0 + PipeWire round-trip ≈ 48.0)", \
+        st.latency_bar.total_text()
+
+    scroll = st.findChild(QScrollArea)
+    content = scroll.widget()
+    net_group = st.iface_combo.parentWidget()
+    latency_group = st.latency_bar.parentWidget()
+
+    # Wide/maximized window (1900x900).
+    st.resize(1900, 900)
+    _ensure_app().processEvents()
+    _ensure_app().processEvents()
+
+    assert content.width() <= 980, \
+        f"scroll content stretched to {content.width()}px on a wide window"
+    assert latency_group.width() < net_group.width(), (
+        f"right column ({latency_group.width()}px) must stay narrower "
+        f"than the left column ({net_group.width()}px) on a wide window")
+    assert scroll.horizontalScrollBar().maximum() == 0, \
+        "horizontal scrollbar appeared at 1900px"
+
+    # Standard window (760x560): resizing back changes nothing.
+    st.resize(760, 560)
+    _ensure_app().processEvents()
+    _ensure_app().processEvents()
+    assert scroll.horizontalScrollBar().maximum() == 0, \
+        "horizontal scrollbar appeared after resizing back to 760x560"
 
     st.hide()
