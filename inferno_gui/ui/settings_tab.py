@@ -73,12 +73,11 @@ _LATENCY_HONESTY_NOTE = (
 
 # Width cap for the two-column scroll content (user report: on a
 # wide/maximized window every group stretched to ~937px and the sparse
-# right column looked absurdly wide).  980 with the 3:2 column stretch
-# gives a balanced split — left ≈ 572px, right ≈ 382px — comfortably
-# above the ~330px where the right column would feel cramped (a 1000
-# cap only buys +20px, so 980 stays).  Small windows never notice:
-# the construction sizeHint (~701px) sits far below the cap, so the
-# standard 760px layout is unchanged.
+# right column looked absurdly wide).  980 with the 1:1 column stretch
+# and the right column's 340px cap gives left ≈ 618px, right ≈ 340px —
+# both columns in their approved bands.  Small windows never notice:
+# the construction sizeHint (~570px) sits far below the cap, so the
+# compact 770px layout is unchanged.
 _CONTENT_MAX_WIDTH = 980
 
 
@@ -193,82 +192,65 @@ class SettingsTab(QWidget):
         net_layout.addRow("PTP Version:", ptp_ver_layout)
 
         # ── Audio Parameters ─────────────────────────────────────
-        # QGridLayout (not QFormLayout) so each latency spinbox shares a
-        # row with its channel spinbox: TX Channels | TX Latency and
-        # RX Channels | RX Latency (user requirement).
+        # QFormLayout with plain rows (user-approved relayout): the
+        # latency spinboxes stack UNDER their channel rows —
+        # TX Channels, TX Latency, RX Channels, RX Latency — instead
+        # of sharing rows with them; the label order keeps each
+        # channel/latency pairing visually adjacent.
         audio_group = QGroupBox("Audio Parameters")
-        audio_layout = QGridLayout(audio_group)
-        # Compact horizontal metrics (user-approved 770px-viewport
-        # layout): the default 8px/11px Fusion spacing/margins made the
-        # paired rows a 405px minimum — the widest left-column group
-        # once the PTP radios are stacked. 4px/6px trims that to ~380
-        # without crowding the rows; the vertical gap stays airy at 6px
-        # (down from 8) to pay for the radio stack's extra height in
-        # the Network group above.
-        audio_layout.setHorizontalSpacing(4)
-        audio_layout.setVerticalSpacing(6)
-        audio_layout.setContentsMargins(6, 6, 6, 6)
+        audio_layout = QFormLayout(audio_group)
+        # 6px spacing and right-aligned labels: the same form-label
+        # style as the Network and Advanced groups above and below.
+        audio_layout.setSpacing(6)
+        audio_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.device_name = QLineEdit("Inferno")
-        # 200px floor (down from 250): the edit box spans the three
-        # field columns (natural sum ~239px), so 250 inflated the
-        # grid's column minimums by ~11px and with them the whole
-        # Audio group past the compact-layout budget.
+        # 200px floor: keeps the field column readable where the spin
+        # rows alone (~95px) would leave it narrow.
         self.device_name.setMinimumWidth(200)
-        audio_layout.addWidget(
-            QLabel("Device Name:"), 0, 0, Qt.AlignmentFlag.AlignRight)
-        # Spans the field columns so the 200px minimum spreads across
-        # them instead of blowing up column 1 (keeps the rows slim).
-        audio_layout.addWidget(self.device_name, 0, 1, 1, 3)
+        audio_layout.addRow("Device Name:", self.device_name)
 
         self.sample_rate = QComboBox()
         for rate in [44100, 48000, 88200, 96000, 176400, 192000]:
             self.sample_rate.addItem(f"{rate} Hz", rate)
         self.sample_rate.setCurrentText("48000 Hz")
-        audio_layout.addWidget(
-            QLabel("Sample Rate:"), 1, 0, Qt.AlignmentFlag.AlignRight)
-        audio_layout.addWidget(self.sample_rate, 1, 1, 1, 3)
+        audio_layout.addRow("Sample Rate:", self.sample_rate)
 
         self.tx_channels = QSpinBox()
         self.tx_channels.setRange(1, 64)
         self.tx_channels.setValue(24)
         self.tx_channels.setSuffix(" channels")
-        # Width cap (compact layout): the spinbox's natural minimum is
-        # ~95px at default metrics, so this never binds normally — but
-        # with fat widget metrics (font scale, larger style fonts) the
-        # hint inflates and Qt clamps the layout minimum to the cap,
-        # hard-bounding the paired rows' width.
+        # Width cap: the spinbox's natural minimum is ~95px at default
+        # metrics, so this never binds normally — but with fat widget
+        # metrics (font scale, larger style fonts) the hint inflates
+        # and Qt clamps the layout minimum to the cap.
         self.tx_channels.setMaximumWidth(140)
-        audio_layout.addWidget(
-            QLabel("TX Channels (Output):"), 2, 0, Qt.AlignmentFlag.AlignRight)
-        audio_layout.addWidget(self.tx_channels, 2, 1)
+        audio_layout.addRow("TX Channels (Output):", self.tx_channels)
 
+        # TX Latency sits directly below its channel row — rows, never
+        # columns (the label order carries the pairing).
         self.tx_latency = QDoubleSpinBox()
         self._configure_latency_spin(self.tx_latency)
-        audio_layout.addWidget(
-            QLabel("TX Latency:"), 2, 2, Qt.AlignmentFlag.AlignRight)
-        audio_layout.addWidget(self.tx_latency, 2, 3)
+        audio_layout.addRow("TX Latency:", self.tx_latency)
 
         self.rx_channels = QSpinBox()
         self.rx_channels.setRange(1, 64)
         self.rx_channels.setValue(24)
         self.rx_channels.setSuffix(" channels")
-        # Same compact-layout width cap as the TX spinbox.
+        # Same width cap as the TX spinbox.
         self.rx_channels.setMaximumWidth(140)
-        audio_layout.addWidget(
-            QLabel("RX Channels (Input):"), 3, 0, Qt.AlignmentFlag.AlignRight)
-        audio_layout.addWidget(self.rx_channels, 3, 1)
+        audio_layout.addRow("RX Channels (Input):", self.rx_channels)
 
+        # RX Latency directly below its channel row.
         self.rx_latency = QDoubleSpinBox()
         self._configure_latency_spin(self.rx_latency)
-        audio_layout.addWidget(
-            QLabel("RX Latency:"), 3, 2, Qt.AlignmentFlag.AlignRight)
-        audio_layout.addWidget(self.rx_latency, 3, 3)
+        audio_layout.addRow("RX Latency:", self.rx_latency)
 
-        # Hint under the latency rows (exact wording per spec).
+        # Hint under the latency rows (exact wording per spec), full
+        # row width like the rows above it.
         self.latency_hint = QLabel("Takes effect after the next PTP start")
         self.latency_hint.setStyleSheet("color: #aaa; font-size: 11px;")
-        audio_layout.addWidget(self.latency_hint, 4, 0, 1, 4)
+        audio_layout.addRow(self.latency_hint)
 
         # Dynamic low-latency warning, visible while either spinbox sits
         # at the 1.0 ms floor (the static tooltip carries the full text).
@@ -282,7 +264,7 @@ class SettingsTab(QWidget):
         self.latency_warning.setStyleSheet("color: #ffc107; font-size: 11px;")
         self.latency_warning.setWordWrap(True)
         self.latency_warning.hide()
-        audio_layout.addWidget(self.latency_warning, 5, 0, 1, 4)
+        audio_layout.addRow(self.latency_warning)
 
         # The warning only depends on values, never on dirty state —
         # safe to wire up right away (initial state: hidden at 10.0 ms).
@@ -476,13 +458,12 @@ class SettingsTab(QWidget):
         # heights independent and the fallback scroll area idle at
         # standard window sizes.
         right_column = QWidget()
-        # Hard width cap (user-approved compact layout): with only the
-        # 3:2 column stretch a 980px-wide window rendered this column
-        # at 382px — roughly double what the buttons and the overview
-        # need.  The cap pins it in the ~200–240px band at every
-        # window size; spare width collects in the left column, and
+        # Hard width cap (user-approved 50:50 rebalance): the old 240px
+        # cap squeezed this column; ~340 keeps it in the 300–350px band
+        # at every window size while the equal column stretch splits
+        # the capped content roughly evenly with the left groups, and
         # the overview's labels wrap so nothing clips.
-        right_column.setMaximumWidth(240)
+        right_column.setMaximumWidth(340)
         right_layout = QVBoxLayout(right_column)
         right_layout.setSpacing(12)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -499,15 +480,16 @@ class SettingsTab(QWidget):
         grid.addWidget(adv_group, 2, 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(right_column, 0, 1, 3, 1)
 
-        # Column stretch 3:2 (not 1:1): the dense left groups (Network,
-        # Audio, Advanced) keep ~60% of the capped width while the
-        # sparser right column (Latency Overview, Actions, Config
-        # Files) stays visibly narrower — equal stretch gave both
-        # columns the same width, which looked absurd on wide windows.
+        # Column stretch 1:1 (user-approved 50:50 rebalance): the two
+        # columns split the available width evenly — on wide windows
+        # the right column tops out at its 340px cap and the spare
+        # width collects in the left column (the denser one), while
+        # compact viewports render both roughly equal.  The old 3:2
+        # stretch kept the right column visibly narrower at every size.
         # Spare height still collects in the trailing stretch row so
         # the groups stay top-aligned.
-        grid.setColumnStretch(0, 3)
-        grid.setColumnStretch(1, 2)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
         grid.setRowStretch(3, 1)
 
         scroll.setWidget(content)

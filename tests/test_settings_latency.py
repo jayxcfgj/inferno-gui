@@ -5,21 +5,26 @@ Covers the latency-visualization Task 3 contract:
 - .asoundrc ns ⇄ spinbox ms conversion on load/save, other keys survive
 - clamp + warning tooltip + dynamic low-latency warning
 - reset restores 10.0 ms; dirty tracking includes the spinboxes
-- two-column QGridLayout: channels share rows with latency, Actions and
-  Config Files share the right column, content fits 760x560 without the
-  fallback scroll area needing to scroll — in the CONSTRUCTION state and
-  with the Latency Overview POPULATED from a live PipeWire estimate
-  (long real-world interface names in the combo included: neither the
-  combo's longest item nor the overview's text lines may impose width).
+- two-column QGridLayout: the latency rows stack UNDER the channel
+  rows in Audio Parameters (TX Channels → TX Latency → RX Channels →
+  RX Latency — never sharing a row), Actions and Config Files share
+  the right column, and the content fits the user's 770x950 window
+  without the fallback scroll area needing to scroll — in the
+  CONSTRUCTION state and with the Latency Overview POPULATED from a
+  live PipeWire estimate (long real-world interface names in the
+  combo included: neither the combo's longest item nor the
+  overview's text lines may impose width).
 - on wide/maximized windows the scroll content is capped (980px) and
   centered instead of stretching to the viewport: the right column
   stays strictly narrower than the left, no horizontal scrollbar
-  appears at 1900px, and resizing back to 760x560 changes nothing.
+  appears at 1900px, and resizing back to the standard window
+  changes nothing.
 - compact layout for a 770px-logical viewport: the PTP version radios
-  stack vertically (Network group ≤ 360px), the right column stays
-  in the ~200–240px band even on wide windows, and the scroll
-  content's minimum stays ≤ 620px so fat widget metrics still fit
-  770px without horizontal scrolling.
+  stack vertically (Network group ≤ 360px), the right column renders
+  in the ~300–350px band (the 50:50 rebalance raises it from the
+  squeezed ~240px cap), and the scroll content's minimum stays
+  ≤ 720px so fat widget metrics still fit 770px without horizontal
+  scrolling.
 
 Run: QT_QPA_PLATFORM=offscreen python -m pytest tests/test_settings_latency.py -q
 """
@@ -31,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from PyQt6.QtWidgets import (
-    QApplication, QMessageBox, QGridLayout, QScrollArea,
+    QApplication, QMessageBox, QGridLayout, QScrollArea, QFormLayout,
 )
 
 # Hold a module-level reference: a temporary QApplication() expression is
@@ -237,29 +242,41 @@ def _cell(grid, widget):
 
 
 def test_two_column_grid_structure(user_home, monkeypatch):
-    """(f) Channels share grid rows with the latency spinboxes; the groups
-    form a two-column grid (left: Network/Audio/Advanced; right: Actions
-    above Config Files)."""
+    """(f) Latency rows stack UNDER the channel rows in Audio
+    Parameters — TX Channels → TX Latency → RX Channels → RX Latency,
+    each latency spinbox on its own row directly below its channel
+    row (label order keeps the pairing readable; they must NOT share
+    a row).  The groups form a two-column grid (left: Network/Audio/
+    Advanced; right: Actions above Config Files)."""
     st = _make_tab(monkeypatch, user_home)
 
-    # Audio Parameters is a QGridLayout; latency sits beside the channels.
+    # Audio Parameters is a QFormLayout of plain rows; each latency
+    # spinbox sits on its OWN row, directly below its channel row.
     audio_group = st.tx_channels.parentWidget()
-    audio_grid = audio_group.layout()
-    assert isinstance(audio_grid, QGridLayout), \
-        f"Audio Parameters must be a QGridLayout, got {audio_grid}"
+    audio_form = audio_group.layout()
+    assert isinstance(audio_form, QFormLayout), \
+        f"Audio Parameters must be a QFormLayout, got {audio_form}"
 
-    tx_ch, tx_lat = _cell(audio_grid, st.tx_channels), _cell(audio_grid, st.tx_latency)
-    assert tx_ch[0] == tx_lat[0], "TX latency must share the TX Channels row"
-    assert tx_lat[1] > tx_ch[1], "TX latency must sit right of the channel spinbox"
+    def _row(widget):
+        return audio_form.getWidgetPosition(widget)[0]
 
-    rx_ch, rx_lat = _cell(audio_grid, st.rx_channels), _cell(audio_grid, st.rx_latency)
-    assert rx_ch[0] == rx_lat[0], "RX latency must share the RX Channels row"
-    assert rx_lat[1] > rx_ch[1], "RX latency must sit right of the channel spinbox"
-    assert rx_ch[0] > tx_ch[0], "RX row must sit below the TX row"
+    tx_ch, tx_lat = _row(st.tx_channels), _row(st.tx_latency)
+    rx_ch, rx_lat = _row(st.rx_channels), _row(st.rx_latency)
+    assert tx_ch != tx_lat, "TX latency must NOT share the TX Channels row"
+    assert rx_ch != rx_lat, "RX latency must NOT share the RX Channels row"
+    assert tx_lat == tx_ch + 1, \
+        "TX Latency must sit directly below the TX Channels row"
+    assert rx_lat == rx_ch + 1, \
+        "RX Latency must sit directly below the RX Channels row"
+    assert tx_ch < rx_ch, "channel rows keep the TX → RX order"
 
-    # Hint label under the latency rows, exact spec wording.
-    hint = _cell(audio_grid, st.latency_hint)
-    assert hint[0] > rx_ch[0], "hint must sit under the latency rows"
+    # Device Name and Sample Rate lead the form.
+    assert _row(st.device_name) < _row(st.sample_rate) < tx_ch, \
+        "form must lead with Device Name, then Sample Rate"
+
+    # Hint label under the rows, exact spec wording.
+    assert _row(st.latency_hint) > rx_lat, \
+        "hint must sit under the latency rows"
     assert st.latency_hint.text() == HINT_TEXT
 
     # Two-column grid: one QGridLayout holds the columns on the content
@@ -297,9 +314,13 @@ def test_two_column_grid_structure(user_home, monkeypatch):
         "left column order must be Network, Audio Parameters, Advanced"
 
 
-def test_content_fits_standard_window_without_scroll(user_home, monkeypatch):
-    """(g) The two-column content fits a 760x560 window without the
-    fallback scroll area having to scroll."""
+def test_content_fits_user_window_without_scroll(user_home, monkeypatch):
+    """(g) The two-column content stays within the compact budgets —
+    sizeHint width ≤ 760, height ≤ 700 — so the user's 770x950 window
+    holds the tab without the fallback scroll area scrolling.  (The
+    stacked latency rows cost ~2 rows of height; ~700 leaves a wide
+    margin under the ~800px usable height of the 950-970-logical
+    window.)"""
     st = _make_tab(monkeypatch, user_home)
 
     scroll = st.findChild(QScrollArea)
@@ -308,8 +329,8 @@ def test_content_fits_standard_window_without_scroll(user_home, monkeypatch):
     sh = scroll.widget().sizeHint()
     assert sh.width() <= 760, \
         f"content too wide for a standard window: {sh.width()}px"
-    assert sh.height() <= 560, \
-        f"content too tall for a standard window: {sh.height()}px"
+    assert sh.height() <= 700, \
+        f"content too tall for the user's window: {sh.height()}px"
 
 
 def test_populated_latency_overview_fits_without_horizontal_scroll(
@@ -452,11 +473,12 @@ def test_ptp_version_radios_stacked_and_net_group_narrow(
         "(the stacked radios alone must not leave the combo floor above it)"
 
 
-def test_right_column_stays_narrow_on_wide_windows(user_home, monkeypatch):
+def test_right_column_50_50_on_wide_windows(user_home, monkeypatch):
     """(k) The right column (Latency Overview / Actions / Config Files)
-    renders at ~200–240px instead of stretching with the window: its
-    container's minimum stays ≤ 260px and a 1900px window never grows
-    it past 260px (the 3:2 stretch alone used to render it 382px wide)."""
+    gets its ~50:50 share back: its container's minimum stays
+    ≤ 350px and a 1900px window renders it strictly inside the
+    300–350px band (the old 240px cap squeezed it; the old 3:2
+    stretch alone rendered it 382px)."""
     import inferno_gui.ui.settings_tab as settings_tab
 
     _fake_interfaces(monkeypatch, LONG_IFACES, LONG_IFACE_IPS)
@@ -468,9 +490,9 @@ def test_right_column_stays_narrow_on_wide_windows(user_home, monkeypatch):
 
     actions_group = st.save_btn.parentWidget()
     right_column = actions_group.parentWidget()
-    assert right_column.minimumSizeHint().width() <= 260, \
+    assert right_column.minimumSizeHint().width() <= 350, \
         (f"right column minimum {right_column.minimumSizeHint().width()}px "
-         "exceeds the 260px budget")
+         "exceeds the 350px budget")
 
     st.show()
     _ensure_app().processEvents()
@@ -486,19 +508,20 @@ def test_right_column_stays_narrow_on_wide_windows(user_home, monkeypatch):
     st.resize(1900, 900)
     _ensure_app().processEvents()
     _ensure_app().processEvents()
-    assert right_column.width() <= 260, (
-        f"right column stretched to {right_column.width()}px on a wide "
-        "window; it must stay in the ~200–240px band")
+    rw = right_column.width()
+    assert 300 <= rw <= 350, (
+        f"right column rendered {rw}px on a wide window; it must sit in "
+        "the ~300–350px band of the 50:50 rebalance")
 
     st.hide()
 
 
 def test_compact_content_fits_770_viewport(user_home, monkeypatch):
     """(l) Compact-layout budget: the scroll content's minimum stays
-    ≤ 620px (offscreen metrics) so the user's 770px-logical viewport
-    holds the tab without horizontal scrolling even with fat widget
-    metrics — in the CONSTRUCTION state and with the overview
-    POPULATED, and nothing clips at 770x950."""
+    ≤ 720px (offscreen metrics) so the user's 770px-logical viewport
+    holds the tab without scrolling even with fat widget metrics —
+    in the CONSTRUCTION state and with the overview POPULATED, and
+    nothing clips at 770x950 (no scrollbar either way)."""
     import inferno_gui.ui.settings_tab as settings_tab
 
     # Construction state.
@@ -506,8 +529,8 @@ def test_compact_content_fits_770_viewport(user_home, monkeypatch):
     scroll = st.findChild(QScrollArea)
     content = scroll.widget()
     con_min = content.minimumSizeHint().width()
-    assert con_min <= 620, \
-        f"construction content minimum {con_min}px exceeds the 620px budget"
+    assert con_min <= 720, \
+        f"construction content minimum {con_min}px exceeds the 720px budget"
 
     # Populated state: long interfaces in the combo and a live
     # PipeWire estimate in the overview.
@@ -529,14 +552,18 @@ def test_compact_content_fits_770_viewport(user_home, monkeypatch):
     scroll2 = st2.findChild(QScrollArea)
     content2 = scroll2.widget()
     pop_min = content2.minimumSizeHint().width()
-    assert pop_min <= 620, \
-        f"populated content minimum {pop_min}px exceeds the 620px budget"
+    assert pop_min <= 720, \
+        f"populated content minimum {pop_min}px exceeds the 720px budget"
 
-    # Nothing clipped at the 770x950 viewport: no horizontal scrollbar.
+    # Nothing clipped at the 770x950 viewport: no scrollbar in either
+    # direction (the stacked latency rows must stay short enough that
+    # the user's tall window never grows a vertical one).
     st2.resize(770, 950)
     _ensure_app().processEvents()
     _ensure_app().processEvents()
     assert scroll2.horizontalScrollBar().maximum() == 0, \
         "horizontal scrollbar appeared at the 770x950 viewport"
+    assert scroll2.verticalScrollBar().maximum() == 0, \
+        "vertical scrollbar appeared at the 770x950 viewport"
 
     st2.hide()
