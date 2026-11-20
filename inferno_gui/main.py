@@ -17,6 +17,11 @@ def main():
         print("Please run: sudo python3 -m inferno_gui", file=sys.stderr)
         sys.exit(1)
 
+    # Make it visible which copy of the package this process actually runs
+    # (guards against stale editable installs / duplicate checkouts).
+    from inferno_gui import __file__ as _pkg_file
+    print(f"[inferno-gui] running from: {os.path.dirname(os.path.abspath(_pkg_file))}", flush=True)
+
     # Set up signal handlers for clean shutdown
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
