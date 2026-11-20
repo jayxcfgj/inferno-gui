@@ -276,12 +276,17 @@ class ControlTab(QWidget):
         self.qpwgraph_btn.clicked.connect(self._open_qpwgraph)
         # How-to tooltip (user-requested): routing is obvious, but the
         # patchbay persistence is the one part users keep missing.
+        # Multi-line (Qt honors \n) — the one-giant-line version was
+        # unreadable; Patchbay menu items align at the arrow.
         self.qpwgraph_btn.setToolTip(
-            "Route audio inside PipeWire: drag ports to connect Inferno "
-            "nodes with your apps. To keep routes across restarts: "
-            "Patchbay > Save As... then Activated re-applies them "
-            "automatically, Exclusive drops everything not in the "
-            "patchbay, Edit changes the saved connections."
+            "Route audio inside PipeWire: drag ports to connect\n"
+            "Inferno nodes with your apps.\n"
+            "\n"
+            "Keep routes across restarts (Patchbay menu):\n"
+            "Save As...  → save your connections\n"
+            "Activated   → re-apply them automatically\n"
+            "Exclusive   → drop everything not in the patchbay\n"
+            "Edit        → change the saved connections"
         )
         tools_layout.addWidget(self.qpwgraph_btn, 0, Qt.AlignmentFlag.AlignLeft)
 

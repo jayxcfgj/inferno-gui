@@ -21,6 +21,10 @@ travels as target-side ``env KEY=value`` command arguments (from
 
 Returns "unknown" (None) whenever the tool is missing, exits nonzero,
 times out, or its output cannot be decoded/parsed — never raises.
+Every failure path logs a one-line WARNING first: the GUI runs as root
+with stderr visible in the user's terminal, so a read that degrades to
+"unknown" must say WHY (logging's last-resort handler prints WARNING+
+to stderr even without any logging setup).
 
 The session-env helpers come from ``core.pipewire_env`` (stdlib + a
 core-only config import) so this module never imports the UI stack:
@@ -30,6 +34,7 @@ initialized module) that broke helper-first import orders in fresh
 interpreters.
 """
 
+import logging
 import re
 import subprocess
 
@@ -38,6 +43,8 @@ from inferno_gui.core.pipewire_env import (
     get_pipewire_env_args,
     get_pipewire_user,
 )
+
+_LOG = logging.getLogger(__name__)
 
 _QUANTUM_RE = re.compile(r"clock\.quantum\s*=\s*(\d+)")
 _RATE_RE = re.compile(r"clock\.rate\s*=\s*(\d+)")
@@ -62,6 +69,20 @@ def _pw_metadata_command() -> list[str]:
     ]
 
 
+def _output_tail(proc, limit: int = 200) -> str:
+    """Last ~200 chars of stderr+stdout for the nonzero-rc WARNING.
+
+    ``%r`` at the call site keeps embedded newlines escaped, so the log
+    stays one line. Non-text (bytes) output from a real run cannot be
+    concatenated with the ``\\n`` glue — fall back to repr, and never
+    let diagnostics break the never-raise contract.
+    """
+    try:
+        return ((proc.stderr or "") + "\n" + (proc.stdout or ""))[-limit:]
+    except TypeError:
+        return (repr(proc.stderr) + repr(proc.stdout))[-limit:]
+
+
 def read_pipewire_latency(headroom_frames: int = 128):
     """Estimate PipeWire graph latency from the current quantum/rate.
 
@@ -79,19 +100,30 @@ def read_pipewire_latency(headroom_frames: int = 128):
             capture_output=True,
             text=True,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        _LOG.warning(
+            "pw-metadata timed out after %ss",
+            getattr(exc, "timeout", _TIMEOUT_S),
+        )
         return None
-    except UnicodeDecodeError:
+    except UnicodeDecodeError as exc:
         # With text=True the output decode happens INSIDE subprocess.run,
         # so a real decode failure raises here, not in the output handling
         # below. Degrade to "unknown" like every other failure mode.
+        _LOG.warning("pw-metadata output undecodable: %s", exc)
         return None
-    except OSError:  # FileNotFoundError, PermissionError, ...
+    except OSError as exc:  # FileNotFoundError, PermissionError, ...
+        _LOG.warning("pw-metadata failed to run: %s", exc)
         return None
 
     # A nonzero exit means the tool failed; never trust output from a
     # failed run (it may be partial or unrelated).
     if proc.returncode != 0:
+        _LOG.warning(
+            "pw-metadata exited rc=%s; tail: %r",
+            proc.returncode,
+            _output_tail(proc),
+        )
         return None
 
     try:
@@ -99,17 +131,25 @@ def read_pipewire_latency(headroom_frames: int = 128):
         quantum_match = _QUANTUM_RE.search(output)
         rate_match = _RATE_RE.search(output)
         if quantum_match is None or rate_match is None:
+            _LOG.warning(
+                "pw-metadata output unparseable; head: %r", output[:200]
+            )
             return None
 
         quantum = int(quantum_match.group(1))
         rate = int(rate_match.group(1))
         if rate <= 0:
+            _LOG.warning(
+                "pw-metadata clock.rate=%s unusable; head: %r",
+                rate, output[:200],
+            )
             return None
 
         per_direction_ms = (quantum + headroom_frames) * 1000 / rate
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
         # Non-text output (decode) or non-numeric captures (parse):
         # degrade to "unknown" instead of raising.
+        _LOG.warning("pw-metadata output not parseable: %r", exc)
         return None
 
     return {

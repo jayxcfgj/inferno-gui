@@ -9,6 +9,7 @@ target-side env command arguments where sudo env_reset cannot strip
 them. All subprocess activity is mocked here; the import-order tests
 run real fresh interpreters via subprocess.
 """
+import logging
 import os
 import pwd
 import subprocess
@@ -82,6 +83,62 @@ def test_partial_output_missing_rate_returns_none():
 def test_partial_output_missing_quantum_returns_none():
     with _patch_run("  clock.rate = 48000\n"):
         assert pipewire_latency.read_pipewire_latency() is None
+
+
+# ── failure diagnostics (WARNING logs) ─────────────────────────
+# The GUI runs as root with stderr visible in the user's terminal:
+# a failed read must say WHY (logging's last-resort handler prints
+# WARNING+ to stderr), not just silently degrade to "unknown".
+
+
+def _warnings(caplog):
+    """WARNING records from the helper's module logger."""
+    return [r for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_timeout_logs_warning(caplog):
+    """A timeout logs a one-line WARNING naming the elapsed time."""
+    with mock.patch(
+        "subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="pw-metadata", timeout=2),
+    ):
+        with caplog.at_level(
+            logging.WARNING, logger="inferno_gui.core.pipewire_latency"
+        ):
+            assert pipewire_latency.read_pipewire_latency() is None
+    warns = _warnings(caplog)
+    assert warns, f"no WARNING logged on timeout: {caplog.text!r}"
+    assert any("timed out" in r.getMessage() for r in warns), caplog.text
+    assert any("2" in r.getMessage() for r in warns), \
+        f"timeout WARNING lacks the elapsed seconds: {caplog.text!r}"
+
+
+def test_nonzero_exit_logs_warning_with_rc_and_tail(caplog):
+    """A nonzero exit logs rc plus the tail of stderr+stdout."""
+    with _patch_run("boom: connection refused", returncode=3):
+        with caplog.at_level(
+            logging.WARNING, logger="inferno_gui.core.pipewire_latency"
+        ):
+            assert pipewire_latency.read_pipewire_latency() is None
+    warns = _warnings(caplog)
+    assert warns, f"no WARNING logged on nonzero exit: {caplog.text!r}"
+    assert any("rc=3" in r.getMessage() for r in warns), caplog.text
+    assert any("boom: connection refused" in r.getMessage() for r in warns), \
+        f"nonzero-exit WARNING lacks the output tail: {caplog.text!r}"
+
+
+def test_unparseable_output_logs_warning(caplog):
+    """Output without clock lines logs a WARNING with an output excerpt."""
+    with _patch_run("some unrelated garbage with no clock lines here"):
+        with caplog.at_level(
+            logging.WARNING, logger="inferno_gui.core.pipewire_latency"
+        ):
+            assert pipewire_latency.read_pipewire_latency() is None
+    warns = _warnings(caplog)
+    assert warns, f"no WARNING logged on unparseable output: {caplog.text!r}"
+    assert any("unparseable" in r.getMessage() for r in warns), caplog.text
+    assert any("some unrelated garbage" in r.getMessage() for r in warns), \
+        f"unparseable WARNING lacks the output head: {caplog.text!r}"
 
 
 def test_runs_pw_metadata_as_invoking_user(monkeypatch):

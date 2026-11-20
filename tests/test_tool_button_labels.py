@@ -45,10 +45,17 @@ def test_tool_buttons_equal_width_and_window_unchanged():
 
 
 # How-to tooltip for the qpwgraph launch button (exact wording per spec).
+# Multi-line (Qt honors \n in tooltips): the one-giant-line version was
+# unreadable. Patchbay menu items align at the arrow.
 QPWGRAPH_TOOLTIP = (
-    "Route audio inside PipeWire: drag ports to connect Inferno nodes with your apps. "
-    "To keep routes across restarts: Patchbay > Save As... then Activated re-applies them "
-    "automatically, Exclusive drops everything not in the patchbay, Edit changes the saved connections."
+    "Route audio inside PipeWire: drag ports to connect\n"
+    "Inferno nodes with your apps.\n"
+    "\n"
+    "Keep routes across restarts (Patchbay menu):\n"
+    "Save As...  → save your connections\n"
+    "Activated   → re-apply them automatically\n"
+    "Exclusive   → drop everything not in the patchbay\n"
+    "Edit        → change the saved connections"
 )
 
 
