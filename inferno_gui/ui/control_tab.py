@@ -274,6 +274,15 @@ class ControlTab(QWidget):
             QPushButton:hover { background-color: #7B1FA2; }
         """)
         self.qpwgraph_btn.clicked.connect(self._open_qpwgraph)
+        # How-to tooltip (user-requested): routing is obvious, but the
+        # patchbay persistence is the one part users keep missing.
+        self.qpwgraph_btn.setToolTip(
+            "Route audio inside PipeWire: drag ports to connect Inferno "
+            "nodes with your apps. To keep routes across restarts: "
+            "Patchbay > Save As... then Activated re-applies them "
+            "automatically, Exclusive drops everything not in the "
+            "patchbay, Edit changes the saved connections."
+        )
         tools_layout.addWidget(self.qpwgraph_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.cable_btn = QPushButton("PipeWire Settings - Open Cable")

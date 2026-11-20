@@ -192,11 +192,11 @@ class SettingsTab(QWidget):
         net_layout.addRow("PTP Version:", ptp_ver_layout)
 
         # ── Audio Parameters ─────────────────────────────────────
-        # QFormLayout with plain rows (user-approved relayout): the
-        # latency spinboxes stack UNDER their channel rows —
-        # TX Channels, TX Latency, RX Channels, RX Latency — instead
-        # of sharing rows with them; the label order keeps each
-        # channel/latency pairing visually adjacent.
+        # QFormLayout with plain rows (user-approved relayout): the two
+        # channel rows group first, then the two latency rows —
+        # TX Channels → RX Channels → TX Latency → RX Latency — instead
+        # of latency interleaving with the channels; the label order
+        # keeps each channel/latency pairing readable.
         audio_group = QGroupBox("Audio Parameters")
         audio_layout = QFormLayout(audio_group)
         # 6px spacing and right-aligned labels: the same form-label
@@ -227,12 +227,6 @@ class SettingsTab(QWidget):
         self.tx_channels.setMaximumWidth(140)
         audio_layout.addRow("TX Channels (Output):", self.tx_channels)
 
-        # TX Latency sits directly below its channel row — rows, never
-        # columns (the label order carries the pairing).
-        self.tx_latency = QDoubleSpinBox()
-        self._configure_latency_spin(self.tx_latency)
-        audio_layout.addRow("TX Latency:", self.tx_latency)
-
         self.rx_channels = QSpinBox()
         self.rx_channels.setRange(1, 64)
         self.rx_channels.setValue(24)
@@ -241,7 +235,13 @@ class SettingsTab(QWidget):
         self.rx_channels.setMaximumWidth(140)
         audio_layout.addRow("RX Channels (Input):", self.rx_channels)
 
-        # RX Latency directly below its channel row.
+        # Latency rows follow the channel rows (user-approved relayout):
+        # TX Channels → RX Channels → TX Latency → RX Latency — the
+        # channels group first, then the latencies.
+        self.tx_latency = QDoubleSpinBox()
+        self._configure_latency_spin(self.tx_latency)
+        audio_layout.addRow("TX Latency:", self.tx_latency)
+
         self.rx_latency = QDoubleSpinBox()
         self._configure_latency_spin(self.rx_latency)
         audio_layout.addRow("RX Latency:", self.rx_latency)
@@ -1041,6 +1041,11 @@ SystemCallFilter=@clock
         self.sample_rate.setEnabled(enabled)
         self.tx_channels.setEnabled(enabled)
         self.rx_channels.setEnabled(enabled)
+        # Latency spinboxes lock while running, like the channels: they
+        # only take effect after the next PTP start, and editing them
+        # mid-run invites confusion about what is live.
+        self.tx_latency.setEnabled(enabled)
+        self.rx_latency.setEnabled(enabled)
         self.ptp_domain.setEnabled(enabled)
         self.sync_interval.setEnabled(enabled)
         self.announce_interval.setEnabled(enabled)

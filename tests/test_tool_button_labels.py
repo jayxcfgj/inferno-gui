@@ -44,6 +44,25 @@ def test_tool_buttons_equal_width_and_window_unchanged():
         f"tab min width grew: {ct.minimumSizeHint().width()}px != 760px"
 
 
+# How-to tooltip for the qpwgraph launch button (exact wording per spec).
+QPWGRAPH_TOOLTIP = (
+    "Route audio inside PipeWire: drag ports to connect Inferno nodes with your apps. "
+    "To keep routes across restarts: Patchbay > Save As... then Activated re-applies them "
+    "automatically, Exclusive drops everything not in the patchbay, Edit changes the saved connections."
+)
+
+
+def test_qpwgraph_button_tooltip():
+    """The qpwgraph button explains the patchbay workflow (how to route
+    and how to make routes survive restarts)."""
+    app = QApplication.instance() or QApplication(sys.argv)
+    from inferno_gui.ui.control_tab import ControlTab
+    ct = ControlTab()
+    app.processEvents()
+    assert ct.qpwgraph_btn.toolTip() == QPWGRAPH_TOOLTIP, \
+        f"qpwgraph tooltip changed:\n{ct.qpwgraph_btn.toolTip()!r}"
+
+
 def test_save_reset_icons():
     """Settings save/reset buttons carry bundled SVG icons and emoji-free labels."""
     app = QApplication.instance() or QApplication(sys.argv)

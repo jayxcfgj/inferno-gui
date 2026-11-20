@@ -1,12 +1,16 @@
 """Tests for the read-only PipeWire latency estimate helper.
 
 core.pipewire_latency.read_pipewire_latency() shells out to
-``pw-metadata -n settings`` (with the user-session env from
-core.pipewire_env.get_pipewire_env) and estimates graph latency from
-quantum/rate. All subprocess activity is mocked here; the import-order
-tests run real fresh interpreters via subprocess.
+``sudo -u <user> env K=V ... pw-metadata -n settings`` — the read runs
+in the INVOKING user's context, because the pipewire daemon in the
+user's runtime session rejects (or lacks the session env for) a root
+peer — with the session env from core.pipewire_env riding as
+target-side env command arguments where sudo env_reset cannot strip
+them. All subprocess activity is mocked here; the import-order tests
+run real fresh interpreters via subprocess.
 """
 import os
+import pwd
 import subprocess
 import sys
 import unittest.mock as mock
@@ -80,27 +84,70 @@ def test_partial_output_missing_quantum_returns_none():
         assert pipewire_latency.read_pipewire_latency() is None
 
 
-def test_forwards_pipewire_env_and_timeout():
-    """The helper must pass _get_pipewire_env()'s env and timeout=2."""
+def test_runs_pw_metadata_as_invoking_user(monkeypatch):
+    """pw-metadata runs in the INVOKING user's context: the command is
+    ``sudo -u <user> env K=V ... pw-metadata -n settings`` — a root peer
+    is exactly what the user-session daemon rejects, so the read must
+    delegate to the user.  The session env (the same two keys
+    core.pipewire_env.get_pipewire_env forces) rides as target-side env
+    arguments where sudo env_reset cannot strip it; timeout/env kwargs
+    stay as they were."""
+    me = pwd.getpwuid(os.getuid())
+    monkeypatch.setenv("SUDO_USER", me.pw_name)
+
     captured = {}
 
     def fake_run(*args, **kwargs):
         captured["args"] = args
         captured.update(kwargs)
         return mock.Mock(returncode=0, stdout=FIXTURE_OUTPUT, stderr="")
+    with mock.patch("subprocess.run", side_effect=fake_run):
+        result = pipewire_latency.read_pipewire_latency()
+
+    assert result is not None
+    cmd, = captured["args"]
+    assert cmd == [
+        "sudo", "-u", me.pw_name, "env",
+        f"XDG_RUNTIME_DIR=/run/user/{me.pw_uid}",
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{me.pw_uid}/bus",
+        "pw-metadata", "-n", "settings",
+    ], f"pw-metadata must run as the invoking user: {cmd}"
+    assert captured["timeout"] == 2
+    assert captured["capture_output"] is True
+    assert captured["text"] is True
+    # The subprocess env stays as-is: the forced user-session keys.
+    env = captured["env"]
+    assert env["XDG_RUNTIME_DIR"] == f"/run/user/{me.pw_uid}"
+    assert env["DBUS_SESSION_BUS_ADDRESS"] == \
+        f"unix:path=/run/user/{me.pw_uid}/bus"
+
+
+def test_user_resolution_without_sudo_user(monkeypatch):
+    """No SUDO_USER: the target is the owner of the actual user's home
+    (same resolution as ui.url_utils._target_user)."""
+    from inferno_gui.core.config import get_actual_user_home
+
+    monkeypatch.delenv("SUDO_USER", raising=False)
+    owner = pwd.getpwuid(get_actual_user_home().stat().st_uid).pw_name
+    uid = pwd.getpwnam(owner).pw_uid
+
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args
+        return mock.Mock(returncode=0, stdout=FIXTURE_OUTPUT, stderr="")
 
     with mock.patch("subprocess.run", side_effect=fake_run):
         result = pipewire_latency.read_pipewire_latency()
 
     assert result is not None
-    assert captured["args"] == (["pw-metadata", "-n", "settings"],)
-    assert captured["timeout"] == 2
-    assert captured["capture_output"] is True
-    assert captured["text"] is True
-    env = captured["env"]
-    # No SUDO_USER: the helper targets the invoking user's runtime dir.
-    assert env["XDG_RUNTIME_DIR"] == f"/run/user/{os.getuid()}"
-    assert env["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path=/run/user/{os.getuid()}/bus"
+    cmd, = captured["args"]
+    assert cmd[:3] == ["sudo", "-u", owner], \
+        f"without SUDO_USER the target must be the home owner: {cmd}"
+    assert cmd[3] == "env"
+    assert f"XDG_RUNTIME_DIR=/run/user/{uid}" in cmd
+    assert f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus" in cmd
+    assert cmd[-3:] == ["pw-metadata", "-n", "settings"]
 
 
 def test_helper_is_read_only_and_never_raises(monkeypatch):

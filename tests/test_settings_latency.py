@@ -5,10 +5,11 @@ Covers the latency-visualization Task 3 contract:
 - .asoundrc ns ⇄ spinbox ms conversion on load/save, other keys survive
 - clamp + warning tooltip + dynamic low-latency warning
 - reset restores 10.0 ms; dirty tracking includes the spinboxes
-- two-column QGridLayout: the latency rows stack UNDER the channel
-  rows in Audio Parameters (TX Channels → TX Latency → RX Channels →
-  RX Latency — never sharing a row), Actions and Config Files share
-  the right column, and the content fits the user's 770x950 window
+- two-column QGridLayout: the Audio Parameters form groups the channel
+  rows first, then the latency rows (TX Channels → RX Channels →
+  TX Latency → RX Latency — never sharing a row), Actions and Config
+  Files share the right column, and the content fits the user's 770x950
+  window
   without the fallback scroll area needing to scroll — in the
   CONSTRUCTION state and with the Latency Overview POPULATED from a
   live PipeWire estimate (long real-world interface names in the
@@ -236,22 +237,49 @@ def test_dirty_tracking_includes_latency(user_home, monkeypatch, silenced_dialog
     assert st.has_unsaved_changes() is False
 
 
+def test_running_state_locks_latency_spinboxes(user_home, monkeypatch):
+    """(m) While inferno runs, both latency spinboxes lock (like the
+    channels — latency only takes effect after the next PTP start
+    anyway); stopping re-enables them.  log_level stays locked in
+    every state (trace lock, Task-6)."""
+    st = _make_tab(monkeypatch, user_home)
+
+    assert st.rx_latency.isEnabled() is True
+    assert st.tx_latency.isEnabled() is True
+
+    st.set_running_state(True)
+    assert st.rx_latency.isEnabled() is False, \
+        "running must lock the RX latency spinbox"
+    assert st.tx_latency.isEnabled() is False, \
+        "running must lock the TX latency spinbox"
+    assert st.log_level.isEnabled() is False, \
+        "log_level must stay locked while running"
+
+    st.set_running_state(False)
+    assert st.rx_latency.isEnabled() is True, \
+        "stopping must re-enable the RX latency spinbox"
+    assert st.tx_latency.isEnabled() is True, \
+        "stopping must re-enable the TX latency spinbox"
+    assert st.log_level.isEnabled() is False, \
+        "log_level must stay locked while stopped"
+
+
 def _cell(grid, widget):
     """(row, column, rowSpan, colSpan) of a widget inside a QGridLayout."""
     return grid.getItemPosition(grid.indexOf(widget))
 
 
 def test_two_column_grid_structure(user_home, monkeypatch):
-    """(f) Latency rows stack UNDER the channel rows in Audio
-    Parameters — TX Channels → TX Latency → RX Channels → RX Latency,
-    each latency spinbox on its own row directly below its channel
-    row (label order keeps the pairing readable; they must NOT share
-    a row).  The groups form a two-column grid (left: Network/Audio/
-    Advanced; right: Actions above Config Files)."""
+    """(f) Audio Parameters groups the channel rows first, then the
+    latency rows — TX Channels → RX Channels → TX Latency → RX Latency,
+    each on its OWN row (they must NOT share a row with anything; the
+    label order keeps the pairing readable).  The groups form a
+    two-column grid (left: Network/Audio/Advanced; right: Actions above
+    Config Files)."""
     st = _make_tab(monkeypatch, user_home)
 
-    # Audio Parameters is a QFormLayout of plain rows; each latency
-    # spinbox sits on its OWN row, directly below its channel row.
+    # Audio Parameters is a QFormLayout of plain rows; channels group
+    # first, then the latencies, none sharing a row.
     audio_group = st.tx_channels.parentWidget()
     audio_form = audio_group.layout()
     assert isinstance(audio_form, QFormLayout), \
@@ -264,11 +292,16 @@ def test_two_column_grid_structure(user_home, monkeypatch):
     rx_ch, rx_lat = _row(st.rx_channels), _row(st.rx_latency)
     assert tx_ch != tx_lat, "TX latency must NOT share the TX Channels row"
     assert rx_ch != rx_lat, "RX latency must NOT share the RX Channels row"
-    assert tx_lat == tx_ch + 1, \
-        "TX Latency must sit directly below the TX Channels row"
-    assert rx_lat == rx_ch + 1, \
-        "RX Latency must sit directly below the RX Channels row"
+    # channels adjacent, latencies adjacent, latencies AFTER channels
     assert tx_ch < rx_ch, "channel rows keep the TX → RX order"
+    assert rx_ch == tx_ch + 1, \
+        "the channel rows must sit adjacent (TX Channels → RX Channels)"
+    assert tx_lat == rx_ch + 1, \
+        "TX Latency must sit directly below the channel rows"
+    assert rx_lat == tx_lat + 1, \
+        "the latency rows must sit adjacent (TX Latency → RX Latency)"
+    assert tx_lat > rx_ch, \
+        "the latency rows must come after the channel rows"
 
     # Device Name and Sample Rate lead the form.
     assert _row(st.device_name) < _row(st.sample_rate) < tx_ch, \

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QPushButton, QSystemTrayIcon, QMenu,
-    QMessageBox, QApplication
+    QMessageBox, QApplication, QScrollArea
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QFont
@@ -26,11 +26,23 @@ from inferno_gui.ui.settings_tab import SettingsTab
 from inferno_gui.ui.about_dialog import AboutDialog
 from inferno_gui.ui.url_utils import open_url_as_user
 
+# Gating tooltip for every Quit affordance (close dialog + tray menu):
+# quitting while inferno runs would drop all active audio, so Quit is
+# offered only when PTP is stopped.
+_QUIT_RUNNING_TOOLTIP = (
+    "Stop PTP first — quitting while inferno is running would drop all "
+    "active audio."
+)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{__app_name__} v{__version__}")
+        # Provisional construction size: the height gets sized to the
+        # taller tab page once the tabs exist (see the resize after
+        # _setup_menu_bar below — the flat 750 left a band of empty
+        # space under the shorter Control tab).
         self.setGeometry(200, 200, 1000, 750)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
         
@@ -57,6 +69,10 @@ class MainWindow(QMainWindow):
         self._setup_tabs()
         self._setup_tray()
         self._setup_menu_bar()
+        # Default height: just tall enough that the taller tab page
+        # (Settings) needs no scroll bar and the shorter one (Control)
+        # trails into no large empty area; width keeps the 1000 default.
+        self.resize(1000, self._default_window_height())
         self._load_window_state()
         self.settings_tab.load_settings()  # Settings beim Start laden
 
@@ -161,9 +177,13 @@ class MainWindow(QMainWindow):
         
         tray_menu.addSeparator()
         
-        quit_action = QAction("Quit", self)
-        quit_action.triggered.connect(QApplication.instance().quit)
-        tray_menu.addAction(quit_action)
+        self.tray_quit_action = QAction("Quit", self)
+        self.tray_quit_action.triggered.connect(QApplication.instance().quit)
+        # Gated like the close dialog's Quit button: enabled only while
+        # PTP is stopped; _update_tray_actions keeps it in sync whenever
+        # PTP starts/stops.
+        self.tray_quit_action.setEnabled(not self._inferno_running)
+        tray_menu.addAction(self.tray_quit_action)
         
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._tray_activated)
@@ -257,6 +277,14 @@ class MainWindow(QMainWindow):
         """Update tray menu actions based on state."""
         self.tray_start_action.setEnabled(not self._inferno_running)
         self.tray_stop_action.setEnabled(self._inferno_running)
+        # Quit follows the same gate as the close dialog: disabled with
+        # an explanatory tooltip while inferno runs (quitting would
+        # drop all active audio), enabled when stopped.
+        self.tray_quit_action.setEnabled(not self._inferno_running)
+        if self._inferno_running:
+            self.tray_quit_action.setToolTip(_QUIT_RUNNING_TOOLTIP)
+        else:
+            self.tray_quit_action.setToolTip("")
         
         if self._inferno_running:
             self.tray_icon.setToolTip(f"{__app_name__} - PTP Running")
@@ -292,6 +320,34 @@ class MainWindow(QMainWindow):
         """Show about dialog."""
         AboutDialog(self).exec()
 
+    def _default_window_height(self) -> int:
+        """Default window height: the taller tab page plus chrome, no more.
+
+        The height derives from the pages (user report: the flat 750px
+        default left a band of empty space under the Control tab, and
+        on the Settings tab the content ended well above the window
+        bottom).  A page's own sizeHint hides its scroll content — the
+        Settings tab sizes its scroll area to a compact default, not
+        to the content it must show — so a page with a QScrollArea
+        contributes its scroll content's sizeHint instead.  Menu bar,
+        tab bar and a few px of slack complete the height; the window
+        stays freely resizable (no maximum is imposed anywhere).
+        """
+        def _page_height(page) -> int:
+            height = page.sizeHint().height()
+            scroll = page.findChild(QScrollArea)
+            if scroll is not None and scroll.widget() is not None:
+                height = max(height, scroll.widget().sizeHint().height())
+            return height
+
+        needed = max(_page_height(self.control_tab),
+                     _page_height(self.settings_tab))
+        needed += self.tabs.tabBar().sizeHint().height()
+        needed += self.menuBar().sizeHint().height()
+        # A few px of slack so rounding/frame margins never grow a
+        # scroll bar at the default size.
+        return needed + 6
+
     def _load_window_state(self):
         """Load window geometry and state."""
         settings = user_settings("window")
@@ -311,15 +367,76 @@ class MainWindow(QMainWindow):
         # flush and hand it back to the invoking user.
         chown_qsettings(settings)
 
+    def _build_close_dialog(self):
+        """Build the close-event dialog (not exec'd): three buttons with
+        the quit one gated by the PTP state.
+
+        Buttons: Minimize to Tray (the DEFAULT, unchanged behavior),
+        Cancel, and Quit now — the last offered only while PTP is
+        stopped: disabled with a tooltip explaining why when inferno
+        runs (quitting would drop all active audio).  Factored out of
+        closeEvent so tests can inspect the button states directly.
+
+        Returns (box, buttons) with buttons keyed "minimize" / "cancel"
+        / "quit".
+        """
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(__app_name__)
+        box.setText(
+            f"{__app_name__} will continue running in the system tray.\n"
+            "Use the tray icon to show the window or quit the application."
+        )
+        minimize = box.addButton(
+            "Minimize to Tray", QMessageBox.ButtonRole.AcceptRole)
+        cancel = box.addButton(
+            "Cancel", QMessageBox.ButtonRole.RejectRole)
+        quit_btn = box.addButton(
+            "Quit now", QMessageBox.ButtonRole.DestructiveRole)
+        # The default action is unchanged: Enter minimizes to the tray.
+        box.setDefaultButton(minimize)
+        if self._inferno_running:
+            quit_btn.setEnabled(False)
+            quit_btn.setToolTip(_QUIT_RUNNING_TOOLTIP)
+        else:
+            quit_btn.setEnabled(True)
+            quit_btn.setToolTip("")
+        return box, {"minimize": minimize, "cancel": cancel, "quit": quit_btn}
+
     def closeEvent(self, event):
-        """Handle close event - minimize to tray instead of quitting."""
+        """Handle close event - minimize to tray instead of quitting.
+
+        The dialog offers three actions: Minimize to Tray (default, the
+        unchanged behavior), Cancel, and Quit now.  Quit is offered only
+        while PTP is stopped — disabled with a tooltip otherwise — and
+        a quit fully exits the GUI immediately (there is nothing to stop
+        first, since it can only be clicked while inferno is not
+        running).
+        """
         if self.tray_icon.isVisible():
-            QMessageBox.information(
-                self, __app_name__,
-                f"{__app_name__} will continue running in the system tray.\n"
-                "Use the tray icon to show the window or quit the application.",
-                QMessageBox.StandardButton.Ok
-            )
+            box, buttons = self._build_close_dialog()
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is buttons["quit"]:
+                if self._inferno_running:
+                    # Race guard: PTP started while the dialog was open;
+                    # quitting now would drop all active audio, so treat
+                    # the click as cancelled.
+                    event.ignore()
+                    return
+                self._save_window_state()
+                self.tray_icon.hide()
+                event.accept()
+                app = QApplication.instance()
+                if app is not None:
+                    app.quit()
+                return
+            if clicked is buttons["cancel"]:
+                # Dialog dismissed without a choice: keep the window.
+                event.ignore()
+                return
+            # Default action (Minimize pressed or dialog dismissed):
+            # hide to the tray, app keeps running.
             self.hide()
             event.ignore()
         else:
