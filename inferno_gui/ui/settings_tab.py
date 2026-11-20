@@ -89,9 +89,11 @@ class SettingsTab(QWidget):
         self._original_values = {}
         self._init_ui()
         self.load_settings()
-        # Initial paint of the Latency Overview bar from the loaded
-        # config; showEvent refreshes it on every tab activation.
-        self._refresh_latency_overview()
+        # NOTE: the Latency Overview is NOT refreshed here — querying
+        # pw-metadata at construction would block for up to 2 s before
+        # the tab is ever shown (and shells out in unrelated widget
+        # tests). showEvent refreshes it on first display and on every
+        # tab activation.
         self._capture_original_values()
         self._setup_dirty_tracking()
     
@@ -370,15 +372,16 @@ class SettingsTab(QWidget):
         # ── Latency Overview ────────────────────────────────────
         # Painted bar: the configured Inferno RX latency (green)
         # stacked on the estimated PipeWire graph round trip (blue).
-        # The tooltip carries the honesty note about inferno's RX/TX
-        # asymmetry; values refresh on showEvent and once after
-        # construction.
+        # The group tooltip carries the honesty note about inferno's
+        # RX/TX asymmetry; the bar composes that note with the
+        # estimate's scope disclosure. Values refresh on showEvent
+        # (never at construction — see __init__).
         latency_group = QGroupBox("Latency Overview")
         latency_layout = QVBoxLayout(latency_group)
         latency_layout.setSpacing(4)
         self.latency_bar = LatencyBar()
         latency_group.setToolTip(_LATENCY_HONESTY_NOTE)
-        self.latency_bar.setToolTip(_LATENCY_HONESTY_NOTE)
+        self.latency_bar.set_context_note(_LATENCY_HONESTY_NOTE)
         latency_layout.addWidget(self.latency_bar)
 
         # ── Right column container ──────────────────────────────
@@ -464,12 +467,15 @@ class SettingsTab(QWidget):
         receive direction is the end-to-end path the user hears.  The
         PipeWire segment shows the estimated graph round trip from
         pw-metadata, or is absent ("unknown") when PipeWire cannot
-        answer; read_pipewire_latency never raises.
+        answer; read_pipewire_latency never raises.  The full result
+        dict is forwarded as `details` so the bar can disclose the
+        estimate's basis (quantum/rate/headroom).
         """
         pw = read_pipewire_latency()
         self.latency_bar.set_values(
             self.rx_latency.value(),
             pw["round_trip_ms"] if pw else None,
+            details=pw,
         )
 
     def showEvent(self, event):

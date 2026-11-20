@@ -26,7 +26,9 @@ from inferno_gui.core.config import get_actual_user_home
 _LOG = logging.getLogger(__name__)
 
 # Session variables the child needs to reach the user's desktop (the
-# same set control_tab._get_pipewire_env forwards).  Only
+# same set core.pipewire_env.get_pipewire_env forwards — the logic
+# lives in core now; control_tab._get_pipewire_env is a thin alias).
+# Only
 # variables that are actually set in our environment are forwarded;
 # XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS additionally have
 # UID-derived defaults for when the environment lacks them.

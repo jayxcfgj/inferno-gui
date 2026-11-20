@@ -2,11 +2,13 @@
 
 core.pipewire_latency.read_pipewire_latency() shells out to
 ``pw-metadata -n settings`` (with the user-session env from
-control_tab._get_pipewire_env) and estimates graph latency from
-quantum/rate. All subprocess activity is mocked here.
+core.pipewire_env.get_pipewire_env) and estimates graph latency from
+quantum/rate. All subprocess activity is mocked here; the import-order
+tests run real fresh interpreters via subprocess.
 """
 import os
 import subprocess
+import sys
 import unittest.mock as mock
 
 from inferno_gui.core import pipewire_latency
@@ -109,3 +111,67 @@ def test_helper_is_read_only_and_never_raises(monkeypatch):
         except OSError:
             raise AssertionError("helper must never raise")
     assert result is None
+
+
+# ── import order (circular-import regression) ─────────────────
+
+
+def _fresh_interpreter_import(module: str):
+    """Import `module` in a clean interpreter; return the CompletedProcess."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return subprocess.run(
+        [sys.executable, "-c", f"import {module}"],
+        capture_output=True, text=True, timeout=60,
+        cwd=repo_root,
+    )
+
+
+def test_fresh_interpreter_imports_helper_first():
+    """Importing the helper FIRST must not hit a partially initialized
+    module: core.pipewire_latency must not import from ui.* (which
+    pulls main_window → settings_tab → back into pipewire_latency)."""
+    proc = _fresh_interpreter_import("inferno_gui.core.pipewire_latency")
+    assert proc.returncode == 0, \
+        f"helper-first import failed:\n{proc.stderr}"
+
+
+def test_fresh_interpreter_imports_ui_first():
+    """The UI-first import order must also stay clean."""
+    proc = _fresh_interpreter_import("inferno_gui.ui.control_tab")
+    assert proc.returncode == 0, f"ui-first import failed:\n{proc.stderr}"
+
+
+def test_helper_imports_env_from_core_not_ui():
+    """The env helper must live in a stdlib-only core module: importing
+    inferno_gui.core.pipewire_latency must not drag in PyQt6 at all."""
+    proc = _fresh_interpreter_import(
+        "inferno_gui.core.pipewire_latency as m;"
+        "import sys;"
+        "assert not any(mod.startswith('PyQt6') for mod in sys.modules), "
+        "'PyQt6 leaked into the helper import: ' + "
+        "str([m for m in sys.modules if m.startswith('PyQt6')])")
+    assert proc.returncode == 0, \
+        f"helper import pulls PyQt6:\n{proc.stdout}{proc.stderr}"
+
+
+# ── never-raises hardening ────────────────────────────────────
+
+
+def test_nonzero_exit_returns_none():
+    """pw-metadata exiting nonzero is a failure, even when the output
+    happens to contain parseable clock lines."""
+    with _patch_run(FIXTURE_OUTPUT, returncode=1):
+        assert pipewire_latency.read_pipewire_latency() is None
+
+
+def test_malformed_numeric_output_returns_none():
+    """Non-numeric clock values must degrade to None, never raise."""
+    with _patch_run("clock.quantum = abc\nclock.rate = 48000\n"):
+        assert pipewire_latency.read_pipewire_latency() is None
+
+
+def test_non_text_output_returns_none():
+    """Non-text stdout (e.g. bytes from a broken pipe) must degrade to
+    None, never raise TypeError."""
+    with _patch_run(b"clock.quantum = 1024\nclock.rate = 48000\n"):
+        assert pipewire_latency.read_pipewire_latency() is None

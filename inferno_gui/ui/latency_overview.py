@@ -6,9 +6,24 @@ green for the configured Inferno RX latency, the app's blue for the
 estimated PipeWire graph round trip.  A minimum-width floor keeps
 tiny-but-positive shares visible, and degenerate zero values never
 reach a division.  Below the painted strip the widget carries the
-total line ("Total ≈ X ms (Inferno X + PipeWire ≈ Y)" — or
-"(PipeWire: unknown)" when PipeWire cannot answer) and an
-"estimated" hint.
+total line and an "estimated" hint.
+
+Honesty contract (final review):
+- The PipeWire value is labelled a *round-trip* estimate in the total
+  line: ``Total ≈ X ms (Inferno X + PipeWire round-trip ≈ Y)``.
+- When PipeWire cannot answer there is no fake numerical total built
+  on a missing component: the total line says
+  ``Total unknown (Inferno RX X ms + PipeWire: unknown)``.
+- ``set_values(..., details=...)`` surfaces the estimate's basis
+  (quantum/rate/headroom) in a compact visible hint line,
+  ``estimated — quantum 1024 @ 48000 Hz + headroom 128``; the *full*
+  scope disclosure — including that hardware DAC/ADC latency is
+  excluded — rides the tooltip instead: a full visible line measures
+  ~500px against the ~345px the right column gets in a 760px window,
+  and the 560px height budget has only ~3px of slack for another
+  line, so the tooltip is the only place the full text fits.
+- The tab-provided honesty note (set_context_note) stays in the
+  tooltip alongside the scope text.
 
 Colors follow the settings tab palette: green #4caf50 (status OK),
 blue #2196F3 (the app's existing blue), amber #ffc107 for the
@@ -29,6 +44,11 @@ _LABEL_COLOR = QColor("#ffffff")
 _MIN_SEGMENT_PX = 8
 _STRIP_H = 16
 
+# Scope disclosure for the tooltip: the visible lines stay compact
+# (they must fit the ~345px right-column share of a 760px window),
+# the tooltip carries the full sentence.
+_DAC_ADC_NOTE = "excludes hardware DAC/ADC latency"
+
 
 class LatencyBar(QWidget):
     """Stacked latency bar with the total text below.
@@ -37,13 +57,19 @@ class LatencyBar(QWidget):
     receive direction is the end-to-end path the user hears); the
     PipeWire segment is fed the estimated graph round trip from
     ``read_pipewire_latency``.  ``pipewire_ms=None`` paints no PipeWire
-    segment and the texts say "unknown".
+    segment and the texts say "unknown".  ``details`` (the dict
+    returned by ``read_pipewire_latency``) surfaces the estimate's
+    quantum/rate/headroom basis.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._inferno_ms = 0.0
         self._pw_ms = None
+        self._pw_details = None
+        # Honesty note supplied by the settings tab (RX/TX asymmetry);
+        # shown in the tooltip above the scope text.
+        self._context_note = ""
         # Segment fractions of the total milliseconds (attributes per
         # the contract, for assertion; painted widths add a floor, see
         # segment_widths()).
@@ -61,21 +87,37 @@ class LatencyBar(QWidget):
         lay.setSpacing(2)
         lay.addWidget(self._total_label)
         lay.addWidget(self._hint_label)
+        self._update_tooltip()
 
     # ── public contract ───────────────────────────────────────
 
-    def set_values(self, inferno_ms: float, pipewire_ms: float | None) -> None:
+    def set_values(self, inferno_ms: float, pipewire_ms: float | None,
+                    details: dict | None = None) -> None:
         """Update the bar.
 
         ``pipewire_ms=None`` → no PipeWire segment, total line and hint
-        say "unknown".  Non-positive values paint no segment of their
-        own.
+        say "unknown" (the total line never invents a number).  Non-
+        positive values paint no segment of their own.  ``details``
+        (optional, backward-compatible) carries the estimate's
+        quantum/rate/headroom and is surfaced in the hint line and
+        tooltip.
         """
         self._inferno_ms = float(inferno_ms or 0.0)
         self._pw_ms = None if pipewire_ms is None else float(pipewire_ms)
+        self._pw_details = None if details is None else dict(details)
         self._update_fractions()
         self._update_texts()
         self.update()  # schedule a repaint of the strip
+
+    def set_context_note(self, note: str) -> None:
+        """Store the tab-provided honesty note for the tooltip.
+
+        The note (inferno's RX/TX asymmetry) is composed into the
+        tooltip above the PipeWire scope text; a plain setToolTip would
+        be overwritten on the next set_values refresh.
+        """
+        self._context_note = note or ""
+        self._update_tooltip()
 
     def total_text(self) -> str:
         """The total line shown below the bar."""
@@ -171,11 +213,30 @@ class LatencyBar(QWidget):
         else:
             self.inferno_fraction, self.pipewire_fraction = 0.0, 0.0
 
+    def _quantum_line(self) -> str | None:
+        """Compact basis of the estimate, or None without details."""
+        d = self._pw_details or {}
+        quantum, rate = d.get("quantum"), d.get("rate")
+        if quantum is None or rate is None:
+            return None
+        return f"quantum {quantum} @ {rate} Hz + headroom {d.get('headroom')}"
+
+    def _scope_text(self) -> str:
+        """Full scope of the PipeWire estimate (tooltip text)."""
+        if self._pw_ms is None:
+            return "PipeWire round-trip unknown (is PipeWire running?)"
+        line = "PipeWire round-trip (estimated)"
+        basis = self._quantum_line()
+        if basis is not None:
+            line += f": {basis}"
+        return f"{line} — {_DAC_ADC_NOTE}"
+
     def _update_texts(self):
         inf = self._inferno_ms
         if self._pw_ms is None:
+            # No fake numerical total: one component is unknown.
             self._total_label.setText(
-                f"Total ≈ {inf:.1f} ms (Inferno {inf:.1f} + PipeWire: unknown)")
+                f"Total unknown (Inferno RX {inf:.1f} ms + PipeWire: unknown)")
             self._hint_label.setText(
                 "estimated — PipeWire: unknown (is PipeWire running?)")
             # Amber, like the tab's other "cannot answer" states.
@@ -185,8 +246,22 @@ class LatencyBar(QWidget):
             total = inf + self._pw_ms
             self._total_label.setText(
                 f"Total ≈ {total:.1f} ms "
-                f"(Inferno {inf:.1f} + PipeWire ≈ {self._pw_ms:.1f})")
-            self._hint_label.setText(
-                "estimated — PipeWire share from the current quantum")
+                f"(Inferno {inf:.1f} + PipeWire round-trip ≈ {self._pw_ms:.1f})")
+            basis = self._quantum_line()
+            if basis is not None:
+                self._hint_label.setText(f"estimated — {basis}")
+            else:
+                self._hint_label.setText(
+                    "estimated — PipeWire round-trip from the current quantum")
             self._hint_label.setStyleSheet(
                 "color: #aaa; font-size: 11px;")
+        self._update_tooltip()
+
+    def _update_tooltip(self):
+        """Compose the tooltip: the tab's honesty note (if any) above
+        the PipeWire scope disclosure."""
+        parts = []
+        if self._context_note:
+            parts.append(self._context_note)
+        parts.append(self._scope_text())
+        self.setToolTip("\n\n".join(parts))
