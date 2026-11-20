@@ -23,6 +23,8 @@ from inferno_gui.core.config import (
 )
 from inferno_gui.core.log_parser import LogSeverity
 from inferno_gui.core.ownership import chown_qsettings
+from inferno_gui.core.pipewire_latency import read_pipewire_latency
+from inferno_gui.ui.latency_overview import LatencyBar
 from inferno_gui.ui.url_utils import open_url_as_user
 
 
@@ -61,6 +63,15 @@ def _ns_to_ms(ns: int) -> float:
     return round(ns / _LATENCY_MS_TO_NS, 1)
 
 
+# Verbatim honesty note for the Latency Overview (user-approved
+# wording): inferno's RX/TX latency handling has an upstream
+# asymmetry the overview must not paper over.
+_LATENCY_HONESTY_NOTE = (
+    "Inferno currently advertises RX and applies TX on receive — "
+    "upstream FIXME; values shown are the configured ones."
+)
+
+
 class SettingsTab(QWidget):
     """Settings tab for configuring Inferno and statime."""
     
@@ -78,6 +89,9 @@ class SettingsTab(QWidget):
         self._original_values = {}
         self._init_ui()
         self.load_settings()
+        # Initial paint of the Latency Overview bar from the loaded
+        # config; showEvent refreshes it on every tab activation.
+        self._refresh_latency_overview()
         self._capture_original_values()
         self._setup_dirty_tracking()
     
@@ -133,8 +147,6 @@ class SettingsTab(QWidget):
         ptp_ver_layout.addWidget(self.ptp_v2_radio)
         ptp_ver_layout.addStretch()
         net_layout.addRow("PTP Version:", ptp_ver_layout)
-
-        grid.addWidget(net_group, 0, 0)
 
         # ── Audio Parameters ─────────────────────────────────────
         # QGridLayout (not QFormLayout) so each latency spinbox shares a
@@ -209,8 +221,6 @@ class SettingsTab(QWidget):
         self.rx_latency.valueChanged.connect(self._update_latency_warning)
         self._update_latency_warning()
 
-        grid.addWidget(audio_group, 1, 0)
-
         # ── Advanced statime Options ────────────────────────────
         adv_group = QGroupBox("Advanced statime Options")
         adv_layout = QFormLayout(adv_group)
@@ -246,8 +256,6 @@ class SettingsTab(QWidget):
         )
         self._lock_log_level()
         adv_layout.addRow("Log Level:", self.log_level)
-
-        grid.addWidget(adv_group, 2, 0)
 
         # ── Config Files ────────────────────────────────────────
         config_group = QGroupBox("Config Files")
@@ -359,6 +367,20 @@ class SettingsTab(QWidget):
         self.reset_btn.clicked.connect(self.reset_to_defaults)
         actions_layout.addWidget(self.reset_btn)
 
+        # ── Latency Overview ────────────────────────────────────
+        # Painted bar: the configured Inferno RX latency (green)
+        # stacked on the estimated PipeWire graph round trip (blue).
+        # The tooltip carries the honesty note about inferno's RX/TX
+        # asymmetry; values refresh on showEvent and once after
+        # construction.
+        latency_group = QGroupBox("Latency Overview")
+        latency_layout = QVBoxLayout(latency_group)
+        latency_layout.setSpacing(4)
+        self.latency_bar = LatencyBar()
+        latency_group.setToolTip(_LATENCY_HONESTY_NOTE)
+        self.latency_bar.setToolTip(_LATENCY_HONESTY_NOTE)
+        latency_layout.addWidget(self.latency_bar)
+
         # ── Right column container ──────────────────────────────
         # A nested column rather than flat grid rows: in a flat grid the
         # shared row heights inflated (row 2 = max(Advanced 171,
@@ -370,9 +392,9 @@ class SettingsTab(QWidget):
         right_layout = QVBoxLayout(right_column)
         right_layout.setSpacing(12)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        # Clean seam for the follow-up latency task: the "Latency
-        # Overview" group will insert at the TOP of this column via
-        #     right_layout.insertWidget(0, latency_overview_group)
+        # The Latency Overview group owns the TOP slot of this column
+        # (the seam reserved for it); Actions and Config Files follow.
+        right_layout.insertWidget(0, latency_group)
         right_layout.addWidget(actions_group)
         right_layout.addWidget(config_group)
         right_layout.addStretch()
@@ -434,6 +456,26 @@ class SettingsTab(QWidget):
         """
         low = min(self.rx_latency.value(), self.tx_latency.value()) <= 1.0
         self.latency_warning.setVisible(low)
+
+    def _refresh_latency_overview(self):
+        """Update the Latency Overview bar.
+
+        The Inferno segment shows the configured RX latency — the
+        receive direction is the end-to-end path the user hears.  The
+        PipeWire segment shows the estimated graph round trip from
+        pw-metadata, or is absent ("unknown") when PipeWire cannot
+        answer; read_pipewire_latency never raises.
+        """
+        pw = read_pipewire_latency()
+        self.latency_bar.set_values(
+            self.rx_latency.value(),
+            pw["round_trip_ms"] if pw else None,
+        )
+
+    def showEvent(self, event):
+        """Refresh the latency overview whenever the tab is shown."""
+        super().showEvent(event)
+        self._refresh_latency_overview()
 
     def _open_pw_override(self):
         """Open the PipeWire override in the user's session."""
