@@ -175,3 +175,14 @@ def test_non_text_output_returns_none():
     None, never raise TypeError."""
     with _patch_run(b"clock.quantum = 1024\nclock.rate = 48000\n"):
         assert pipewire_latency.read_pipewire_latency() is None
+
+
+def test_decode_error_inside_run_returns_none():
+    """subprocess.run itself raising UnicodeDecodeError — with text=True
+    the output decode happens INSIDE run(), so a real decode failure
+    escapes the call — must degrade to None, never raise."""
+    with mock.patch(
+        "subprocess.run",
+        side_effect=UnicodeDecodeError("utf-8", b"x", 0, 1, "start"),
+    ):
+        assert pipewire_latency.read_pipewire_latency() is None

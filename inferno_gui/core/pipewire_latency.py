@@ -50,6 +50,11 @@ def read_pipewire_latency(headroom_frames: int = 128):
         )
     except subprocess.TimeoutExpired:
         return None
+    except UnicodeDecodeError:
+        # With text=True the output decode happens INSIDE subprocess.run,
+        # so a real decode failure raises here, not in the output handling
+        # below. Degrade to "unknown" like every other failure mode.
+        return None
     except OSError:  # FileNotFoundError, PermissionError, ...
         return None
 
