@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QLineEdit,
     QCheckBox, QScrollArea, QMessageBox, QGridLayout, QStyle,
-    QRadioButton, QButtonGroup
+    QRadioButton, QButtonGroup, QDoubleSpinBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer
 from PyQt6.QtGui import QFont, QIcon
@@ -47,6 +47,20 @@ def _set_port_interval(port: dict, key: str, value) -> None:
     port[key] = value
 
 
+_LATENCY_MS_TO_NS = 1_000_000
+
+
+def _ms_to_ns(ms: float) -> int:
+    """Milliseconds (spinbox display) → integer nanoseconds (storage)."""
+    return int(round(ms * _LATENCY_MS_TO_NS))
+
+
+def _ns_to_ms(ns: int) -> float:
+    """Integer nanoseconds (storage) → milliseconds, rounded to the
+    0.1 ms display grid the spinboxes use."""
+    return round(ns / _LATENCY_MS_TO_NS, 1)
+
+
 class SettingsTab(QWidget):
     """Settings tab for configuring Inferno and statime."""
     
@@ -72,9 +86,19 @@ class SettingsTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setSpacing(12)
-        layout.setContentsMargins(8, 8, 8, 8)
+        # Two-column arrangement (user-approved layout contract):
+        #   left column  — Network Interface, Audio Parameters,
+        #                  Advanced statime Options
+        #   right column — Actions, Config Files, with a clean seam at
+        #                  the top of the nested stack where the
+        #                  "Latency Overview" group of a later task
+        #                  will insert
+        # The fallback scroll area stays for very small windows; the
+        # columns are balanced so no scrolling is needed at standard
+        # window heights.
+        grid = QGridLayout(content)
+        grid.setSpacing(10)
+        grid.setContentsMargins(8, 8, 8, 8)
 
         # ── Network Interface ────────────────────────────────────
         net_group = QGroupBox("Network Interface")
@@ -110,37 +134,82 @@ class SettingsTab(QWidget):
         ptp_ver_layout.addStretch()
         net_layout.addRow("PTP Version:", ptp_ver_layout)
 
-        layout.addWidget(net_group)
+        grid.addWidget(net_group, 0, 0)
 
         # ── Audio Parameters ─────────────────────────────────────
+        # QGridLayout (not QFormLayout) so each latency spinbox shares a
+        # row with its channel spinbox: TX Channels | TX Latency and
+        # RX Channels | RX Latency (user requirement).
         audio_group = QGroupBox("Audio Parameters")
-        audio_layout = QFormLayout(audio_group)
+        audio_layout = QGridLayout(audio_group)
         audio_layout.setSpacing(8)
-        audio_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.device_name = QLineEdit("Inferno")
         self.device_name.setMinimumWidth(250)
-        audio_layout.addRow("Device Name:", self.device_name)
+        audio_layout.addWidget(
+            QLabel("Device Name:"), 0, 0, Qt.AlignmentFlag.AlignRight)
+        # Spans the field columns so the 250px minimum spreads across
+        # them instead of blowing up column 1 (keeps the rows slim).
+        audio_layout.addWidget(self.device_name, 0, 1, 1, 3)
 
         self.sample_rate = QComboBox()
         for rate in [44100, 48000, 88200, 96000, 176400, 192000]:
             self.sample_rate.addItem(f"{rate} Hz", rate)
         self.sample_rate.setCurrentText("48000 Hz")
-        audio_layout.addRow("Sample Rate:", self.sample_rate)
+        audio_layout.addWidget(
+            QLabel("Sample Rate:"), 1, 0, Qt.AlignmentFlag.AlignRight)
+        audio_layout.addWidget(self.sample_rate, 1, 1, 1, 3)
 
         self.tx_channels = QSpinBox()
         self.tx_channels.setRange(1, 64)
         self.tx_channels.setValue(24)
         self.tx_channels.setSuffix(" channels")
-        audio_layout.addRow("TX Channels (Output):", self.tx_channels)
+        audio_layout.addWidget(
+            QLabel("TX Channels (Output):"), 2, 0, Qt.AlignmentFlag.AlignRight)
+        audio_layout.addWidget(self.tx_channels, 2, 1)
+
+        self.tx_latency = QDoubleSpinBox()
+        self._configure_latency_spin(self.tx_latency)
+        audio_layout.addWidget(
+            QLabel("TX Latency:"), 2, 2, Qt.AlignmentFlag.AlignRight)
+        audio_layout.addWidget(self.tx_latency, 2, 3)
 
         self.rx_channels = QSpinBox()
         self.rx_channels.setRange(1, 64)
         self.rx_channels.setValue(24)
         self.rx_channels.setSuffix(" channels")
-        audio_layout.addRow("RX Channels (Input):", self.rx_channels)
+        audio_layout.addWidget(
+            QLabel("RX Channels (Input):"), 3, 0, Qt.AlignmentFlag.AlignRight)
+        audio_layout.addWidget(self.rx_channels, 3, 1)
 
-        layout.addWidget(audio_group)
+        self.rx_latency = QDoubleSpinBox()
+        self._configure_latency_spin(self.rx_latency)
+        audio_layout.addWidget(
+            QLabel("RX Latency:"), 3, 2, Qt.AlignmentFlag.AlignRight)
+        audio_layout.addWidget(self.rx_latency, 3, 3)
+
+        # Hint under the latency rows (exact wording per spec).
+        self.latency_hint = QLabel("Takes effect after the next PTP start")
+        self.latency_hint.setStyleSheet("color: #aaa; font-size: 11px;")
+        audio_layout.addWidget(self.latency_hint, 4, 0, 1, 4)
+
+        # Dynamic low-latency warning, visible while either spinbox sits
+        # at the 1.0 ms floor (the static tooltip carries the full text).
+        self.latency_warning = QLabel(
+            "⚠ Below ~1 ms RX underruns become likely — "
+            "1.0 ms is the smallest value the GUI offers."
+        )
+        self.latency_warning.setStyleSheet("color: #ffc107; font-size: 11px;")
+        self.latency_warning.hide()
+        audio_layout.addWidget(self.latency_warning, 5, 0, 1, 4)
+
+        # The warning only depends on values, never on dirty state —
+        # safe to wire up right away (initial state: hidden at 10.0 ms).
+        self.tx_latency.valueChanged.connect(self._update_latency_warning)
+        self.rx_latency.valueChanged.connect(self._update_latency_warning)
+        self._update_latency_warning()
+
+        grid.addWidget(audio_group, 1, 0)
 
         # ── Advanced statime Options ────────────────────────────
         adv_group = QGroupBox("Advanced statime Options")
@@ -178,7 +247,7 @@ class SettingsTab(QWidget):
         self._lock_log_level()
         adv_layout.addRow("Log Level:", self.log_level)
 
-        layout.addWidget(adv_group)
+        grid.addWidget(adv_group, 2, 0)
 
         # ── Config Files ────────────────────────────────────────
         config_group = QGroupBox("Config Files")
@@ -255,11 +324,13 @@ class SettingsTab(QWidget):
         self.alsa_plugin_status.setStyleSheet("color: #aaa; font-size: 11px;")
         config_layout.addWidget(self.alsa_plugin_status)
 
-        layout.addWidget(config_group)
-
         # ── Actions ──────────────────────────────────────────────
+        # Stacked vertically so the right column stays narrow enough
+        # for the balanced two-column layout (side-by-side buttons made
+        # the group ~380px wide and pushed the content past 760px).
         actions_group = QGroupBox("Actions")
-        actions_layout = QHBoxLayout(actions_group)
+        actions_layout = QVBoxLayout(actions_group)
+        actions_layout.setSpacing(8)
 
         self.save_btn = QPushButton("Save Configuration")
         _save_icon = _asset_icon('save.svg')
@@ -288,10 +359,36 @@ class SettingsTab(QWidget):
         self.reset_btn.clicked.connect(self.reset_to_defaults)
         actions_layout.addWidget(self.reset_btn)
 
-        actions_layout.addStretch()
-        layout.addWidget(actions_group)
+        # ── Right column container ──────────────────────────────
+        # A nested column rather than flat grid rows: in a flat grid the
+        # shared row heights inflated (row 2 = max(Advanced 171,
+        # Config Files 214)) and pushed the content past the 560px
+        # standard-window budget.  The nested stack keeps the columns'
+        # heights independent and the fallback scroll area idle at
+        # standard window sizes.
+        right_column = QWidget()
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setSpacing(12)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        # Clean seam for the follow-up latency task: the "Latency
+        # Overview" group will insert at the TOP of this column via
+        #     right_layout.insertWidget(0, latency_overview_group)
+        right_layout.addWidget(actions_group)
+        right_layout.addWidget(config_group)
+        right_layout.addStretch()
 
-        layout.addStretch()
+        # ── Two-column arrangement ───────────────────────────────
+        grid.addWidget(net_group, 0, 0)
+        grid.addWidget(audio_group, 1, 0)
+        grid.addWidget(adv_group, 2, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(right_column, 0, 1, 3, 1)
+
+        # Balanced columns: extra width splits evenly; spare height
+        # collects in the trailing stretch row so the groups stay top-
+        # aligned.
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setRowStretch(3, 1)
 
         scroll.setWidget(content)
         main_layout = QVBoxLayout(self)
@@ -305,6 +402,38 @@ class SettingsTab(QWidget):
 
         # Initial checks
         QTimer.singleShot(500, self._check_system_status)
+
+    def _configure_latency_spin(self, sb: QDoubleSpinBox) -> None:
+        """Configure one latency editor.
+
+        QDoubleSpinBox (not QSpinBox): QSpinBox is integer-only and
+        cannot display decimals, while the approved contract asks for
+        0.1 ms resolution. Display is milliseconds; storage stays
+        integer nanoseconds via _ms_to_ns/_ns_to_ms.
+        """
+        sb.setDecimals(1)
+        sb.setRange(1.0, 40.0)
+        sb.setSingleStep(0.5)
+        sb.setSuffix(" ms")
+        sb.setValue(10.0)
+        sb.setToolTip(
+            "Inferno network latency for this direction, in milliseconds.\n\n"
+            "Below ~1 ms RX underruns become likely — inferno does not clamp "
+            "this value. Dante maximum is 40 ms.\n\n"
+            "Takes effect after the next PTP start."
+        )
+
+    def _update_latency_warning(self) -> None:
+        """Show the low-latency warning while either spinbox sits at the
+        1.0 ms floor.
+
+        The spinbox clamps at 1.0, so a value below 1.0 can never be
+        entered: the floor is the closest reachable state and the honest
+        place to surface the warning dynamically. The static tooltip
+        carries the full wording at all times.
+        """
+        low = min(self.rx_latency.value(), self.tx_latency.value()) <= 1.0
+        self.latency_warning.setVisible(low)
 
     def _open_pw_override(self):
         """Open the PipeWire override in the user's session."""
@@ -491,6 +620,12 @@ SystemCallFilter=@clock
                 self.sample_rate.setCurrentIndex(idx)
             self.tx_channels.setValue(self.inferno_config.tx_channels)
             self.rx_channels.setValue(self.inferno_config.rx_channels)
+            # Latency: integer ns in the file → ms display. Missing or
+            # malformed keys keep the 10 ms default (core/config.py).
+            self.rx_latency.setValue(
+                _ns_to_ms(self.inferno_config.get('rx_latency_ns')))
+            self.tx_latency.setValue(
+                _ns_to_ms(self.inferno_config.get('tx_latency_ns')))
         
         # Load interface selection
         saved_iface = settings.value("selected_interface", "", type=str)
@@ -522,6 +657,8 @@ SystemCallFilter=@clock
             'sample_rate': self.sample_rate.currentData(),
             'tx_channels': self.tx_channels.value(),
             'rx_channels': self.rx_channels.value(),
+            'rx_latency': self.rx_latency.value(),
+            'tx_latency': self.tx_latency.value(),
             'ptp_domain': self.ptp_domain.value(),
             'sync_interval': self.sync_interval.value(),
             'announce_interval': self.announce_interval.value(),
@@ -553,6 +690,8 @@ SystemCallFilter=@clock
             'sample_rate': self.sample_rate.currentData(),
             'tx_channels': self.tx_channels.value(),
             'rx_channels': self.rx_channels.value(),
+            'rx_latency': self.rx_latency.value(),
+            'tx_latency': self.tx_latency.value(),
             'ptp_domain': self.ptp_domain.value(),
             'sync_interval': self.sync_interval.value(),
             'announce_interval': self.announce_interval.value(),
@@ -569,6 +708,8 @@ SystemCallFilter=@clock
             self.sample_rate,
             self.tx_channels,
             self.rx_channels,
+            self.rx_latency,
+            self.tx_latency,
             self.ptp_domain,
             self.sync_interval,
             self.announce_interval,
@@ -596,6 +737,9 @@ SystemCallFilter=@clock
         self.inferno_config.set('sample_rate', self.sample_rate.currentData())
         self.inferno_config.set('tx_channels', self.tx_channels.value())
         self.inferno_config.set('rx_channels', self.rx_channels.value())
+        # Latency: ms display → integer ns storage.
+        self.inferno_config.set('rx_latency_ns', _ms_to_ns(self.rx_latency.value()))
+        self.inferno_config.set('tx_latency_ns', _ms_to_ns(self.tx_latency.value()))
         self.inferno_config.save()
         
         # Save interface
@@ -722,6 +866,8 @@ SystemCallFilter=@clock
             self.sample_rate.setCurrentText("48000 Hz")
             self.tx_channels.setValue(24)
             self.rx_channels.setValue(24)
+            self.rx_latency.setValue(10.0)
+            self.tx_latency.setValue(10.0)
             self.ptp_domain.setValue(0)
             self.sync_interval.setValue(0)
             self.announce_interval.setValue(1)
