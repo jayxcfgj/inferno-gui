@@ -18,7 +18,7 @@ A Linux desktop application for easy installing and managing **Inferno** – a D
 
 ## Screenshots
 
-![installer](assets/installer.png.png)
+![installer](assets/installer.png)
 ![main](assets/inferno-gui-main.png)
 ![settings](assets/inferno-gui-settings-tab.png)
 
