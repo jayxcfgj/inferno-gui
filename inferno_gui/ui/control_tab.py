@@ -20,6 +20,10 @@ from inferno_gui.core.config import (
     get_default_statime_config,
     get_work_dir,
 )
+from inferno_gui.core.discovery_kick import (
+    DiscoveryKicker,
+    send_mdns_ptr_probe,
+)
 from inferno_gui.core.lock_gate import LockGate
 from inferno_gui.core.log_parser import StatimeLogParser, LogSeverity, format_log_entry
 from inferno_gui.core.ownership import chown_qsettings
@@ -109,6 +113,20 @@ class ControlTab(QWidget):
         self._startup_verify_timer = QTimer(self)
         self._startup_verify_timer.setSingleShot(True)
         self._startup_verify_timer.timeout.connect(self._verify_ptp_startup)
+
+        # mDNS discovery kick: after PTP starts, a few one-shot PTR
+        # probes make the netaudio daemon re-discover this device within
+        # seconds instead of minutes (its mdns-sd resolve fast-path gives
+        # up after ~3 s; see core/discovery_kick.py). Wired here on the
+        # tab's own ptp_started/ptp_stopped signals (both stop paths -
+        # user stop and process death - emit ptp_stopped) because the
+        # current interface IP lives in this tab's state, so the probes
+        # egress the selected Dante NIC. _probe_socket_factory is a test
+        # seam (None -> real UDP socket).
+        self._probe_socket_factory = None
+        self.discovery_kicker = DiscoveryKicker(parent=self)
+        self.ptp_started.connect(self._on_discovery_kick_start)
+        self.ptp_stopped.connect(self._on_discovery_kick_stop)
         
         # Connect to settings dirty signal
         if self.settings_tab:
@@ -253,6 +271,26 @@ class ControlTab(QWidget):
         self.netaudio_btn.setEnabled(True)  # Always enabled
         self.netaudio_btn.clicked.connect(self._open_netaudio)
         tools_layout.addWidget(self.netaudio_btn, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.discovery_btn = QPushButton("Trigger discovery")
+        # Small sibling of the tool buttons above/below (same flat colored
+        # style, natural width): sends ONE mDNS PTR probe immediately so
+        # the netaudio daemon re-discovers this device without waiting for
+        # the post-start kick schedule.
+        self.discovery_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #009688; color: white;
+                border: none; padding: 8px 14px;
+                font-size: 12px; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #00796B; }
+        """)
+        self.discovery_btn.clicked.connect(self._send_discovery_probe)
+        self.discovery_btn.setToolTip(
+            "Send an mDNS probe so the netaudio daemon re-discovers "
+            "this device immediately"
+        )
+        tools_layout.addWidget(self.discovery_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.qpwgraph_btn = QPushButton("PipeWire Routing - Open qpwgraph")
         try:
@@ -505,6 +543,31 @@ class ControlTab(QWidget):
             chown_qsettings(settings)
             if self.settings_tab:
                 self.settings_tab.set_ptp_version(version)
+
+    def _current_interface_ip(self) -> str | None:
+        """IP address of the currently selected interface, or None."""
+        iface = self.interface_combo.currentData()
+        if not iface:
+            return None
+        return self._interface_ips.get(iface) or None
+
+    def _on_discovery_kick_start(self):
+        """ptp_started: arm the post-start mDNS probes with the CURRENT
+        interface IP so they leave via the Dante NIC."""
+        self.discovery_kicker.start(self._current_interface_ip())
+
+    def _on_discovery_kick_stop(self):
+        """ptp_stopped: disarm the mDNS probes (covers user stop and
+        process death - both emit the signal)."""
+        self.discovery_kicker.stop()
+
+    def _send_discovery_probe(self):
+        """Trigger discovery button: ONE immediate PTR probe via the
+        currently selected interface (test seam: _probe_socket_factory)."""
+        send_mdns_ptr_probe(
+            self._current_interface_ip(),
+            socket_factory=self._probe_socket_factory,
+        )
 
     def start_ptp(self):
         """Start statime PTP daemon."""
