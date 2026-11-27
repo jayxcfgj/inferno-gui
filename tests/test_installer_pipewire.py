@@ -494,3 +494,128 @@ def test_version_ok_offers_rebuild_prompt():
     assert i_ok < i_prompt < i_cleanup < i_build, (
         f"wrong order: ok={i_ok} prompt={i_prompt} cleanup={i_cleanup} build={i_build}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: standalone GUI download + prompt dedupe (final fix wave)
+# ---------------------------------------------------------------------------
+
+
+def test_gui_step_clones_repo_when_sources_missing():
+    """Standalone installer download: a user who grabbed ONLY the script
+    from a GitHub release has no inferno_gui/ next to it — the GUI step
+    must clone the repository shallowly (as the invoking user) and copy
+    the sources from the clone."""
+    body = _section("step_optional_gui() {")
+    # the fallback condition guards the clone
+    assert '[ ! -d "$(dirname "$0")/inferno_gui" ]' in body
+    assert 'run_as_user "git clone --depth 1 https://github.com/jayxcfgj/inferno-gui' in body
+    assert '"$WORK_DIR/inferno-gui-repo"' in body
+    # clear user-facing English log line for the fallback
+    assert "GUI sources not found next to the installer" in body
+    # a stale clone from an earlier run is removed first (TEST_MODE-safe)
+    assert 'rm -rf "$WORK_DIR/inferno-gui-repo"' in body
+    rm_idx = body.index('rm -rf "$WORK_DIR/inferno-gui-repo"')
+    assert '[ "$TEST_MODE" = false ]' in body[max(0, rm_idx - 200):rm_idx]
+    # the copy source is $gui_src (script dir OR clone, same code path)
+    assert 'cp -r "$gui_src/inferno_gui" "$gui_dest/"' in body
+    assert 'cp "$gui_src/pyproject.toml" "$gui_dest/"' in body
+    assert 'cp "$gui_src/README.md" "$gui_dest/"' in body
+    assert 'cp "$gui_src/LICENSE" "$gui_dest/"' in body
+    # the invoking-user chown end state is kept
+    assert 'chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$gui_dest"' in body
+
+
+def test_gui_step_normal_path_stays_clone_free():
+    """With the script inside a repo checkout the step must NOT clone:
+    the clone appears exactly once in the whole script, sits strictly
+    behind the missing-sources condition, and the copies reference
+    $gui_src so the normal path resolves to the script's directory."""
+    content = _content()
+    clone = "git clone --depth 1 https://github.com/jayxcfgj/inferno-gui"
+    assert content.count(clone) == 1, "no unconditional clone allowed"
+    body = _section("step_optional_gui() {")
+    guard_idx = body.index('[ ! -d "$(dirname "$0")/inferno_gui" ]')
+    clone_idx = body.index(clone)
+    assert guard_idx < clone_idx
+    # normal case: sources found next to the installer -> script dir
+    assert 'gui_src="$(dirname "$0")"' in body
+
+
+def test_component_install_decisions_not_re_asked_in_steps():
+    """UX dedupe (field report: prompts asked TWICE, especially with a
+    custom selection): every optional-component install decision is
+    made exactly ONCE per run — in main() (mode menu or the Custom
+    selection y/n block). The per-step re-prompts are gone; the steps
+    run purely on the flags. Secondary, distinct decisions survive."""
+    content = _content()
+    # step-level re-asks removed entirely
+    for gone in (
+        "Install netaudio for Dante network routing control?",
+        "Download and install latest Cable .deb package now?",
+        "Install Millisecond?",
+    ):
+        assert gone not in content, gone
+    # the GUI question exists exactly once — main()'s Custom selection —
+    # and that occurrence sits BEFORE the step function (in main)
+    gui_q = 'Install Inferno GUI (PyQt6 control panel)?" "y"'
+    assert content.count(gui_q) == 1
+    assert content.index(gui_q) < content.index("step_optional_gui() {")
+    # main's custom-selection questions all survive (asked once there)
+    for kept in (
+        'prompt_yes_no "Install Inferno (statime, inferno plugin, PipeWire config)?" "y"',
+        'prompt_yes_no "Install netaudio (Dante controller)?" "y"',
+        'prompt_yes_no "Install Cable (PipeWire GUI)?" "y"',
+        'prompt_yes_no "Install Millisecond (realtime tuning)?" "y"',
+        'prompt_yes_no "Perform PipeWire source and distro cleanup?" "n"',
+    ):
+        assert kept in content, kept
+    # secondary decisions (method, service, run-now) are NOT the install
+    # decision and must keep their own single prompts
+    assert "Select installation method:" in content
+    assert "Set up netaudio-daemon as systemd service (auto-start)?" in content
+    assert "Run Millisecond now to optimize system?" in content
+
+
+def test_step_optional_gui_gated_by_install_gui_flag():
+    """The GUI step runs only when the GUI was actually selected (mode
+    menu or custom y/n) — 'Inferno only' no longer re-opens the
+    decision at the very end of the run."""
+    main_body = _section("main() {")
+    lines = main_body.splitlines()
+    calls = [i for i, ln in enumerate(lines) if ln.strip() == "step_optional_gui"]
+    assert len(calls) == 1, f"unexpected step_optional_gui calls: {calls}"
+    guard = lines[calls[0] - 1]
+    assert 'install_gui" = "true"' in guard, guard
+
+
+def test_mode_menu_shown_once_and_complete():
+    """The mode menu is displayed exactly once (prompt_select's own
+    numbered list) and lists all five modes — the old hardcoded pre
+    -echo duplicated the list and dropped 'Cleanup only' from it."""
+    content = _content()
+    assert content.count("Select installation mode:") == 1
+    # the prompt_select call may span continuation lines: reassemble it
+    lines = content.splitlines()
+    start = next(i for i, ln in enumerate(lines)
+                 if "prompt_select" in ln and "Select installation mode:" in ln)
+    block = []
+    for ln in lines[start:]:
+        block.append(ln)
+        if not ln.rstrip().endswith("\\"):
+            break
+    mode_line = " ".join(b.rstrip().rstrip("\\") for b in block)
+    for option in ("Full installation", "Inferno only", "Optional tools only",
+                   "Custom selection", "Cleanup only"):
+        assert f'"{option}' in mode_line, option
+    # the descriptive labels the old echo carried stay visible
+    assert "(Inferno + Optional tools)" in mode_line
+    assert "(skip optional tools)" in mode_line
+    # and main's case labels match the descriptive option strings
+    main_body = _section("main() {")
+    for option in ("Full installation (Inferno + Optional tools)",
+                   "Inferno only (skip optional tools)",
+                   "Optional tools only (skip Inferno - requires existing inferno setup)",
+                   "Custom selection",
+                   "Cleanup only"):
+        assert f'"{option}")' in main_body, option

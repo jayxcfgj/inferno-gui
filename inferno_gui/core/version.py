@@ -1,4 +1,4 @@
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __app_name__ = "Inferno GUI"
 __description__ = "A Linux desktop tool for managing Inferno Dante/AES67 virtual soundcard with PipeWire."
 __license__ = "MIT"

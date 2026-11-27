@@ -8,7 +8,7 @@ import sys
 import signal
 
 # Import version info first (needed for error messages)
-from inferno_gui.core.version import __app_name__
+from inferno_gui.core.version import __app_name__, __version__
 
 def main():
     # Check for root privileges (needed for statime PTP)
@@ -34,7 +34,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName(__app_name__)
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("InfernoGUI")
     app.setOrganizationDomain("inferno-gui.local")
 

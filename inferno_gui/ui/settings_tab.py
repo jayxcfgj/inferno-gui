@@ -20,6 +20,7 @@ from inferno_gui.core.config import (
     get_interface_ip,
     get_default_statime_config,
     get_work_dir,
+    sync_bind_ip,
 )
 from inferno_gui.core.log_parser import LogSeverity
 from inferno_gui.core.ownership import chown_qsettings
@@ -102,6 +103,11 @@ class SettingsTab(QWidget):
         self.inferno_config = InfernoConfig()
         self._dirty = False
         self._original_values = {}
+        # True while the interface selection is restored programmatically
+        # (startup load, refresh, control-tab push); a genuine user
+        # selection change additionally syncs BIND_IP (see
+        # _on_iface_changed), restores must not.
+        self._restoring_iface = False
         # The single live-refresh timer for the Latency Overview,
         # created lazily by the first showEvent (see _ensure_latency_timer).
         self._latency_timer = None
@@ -662,7 +668,11 @@ class SettingsTab(QWidget):
         if current:
             idx = self.iface_combo.findData(current)
             if idx >= 0:
-                self.iface_combo.setCurrentIndex(idx)
+                self._restoring_iface = True
+                try:
+                    self.iface_combo.setCurrentIndex(idx)
+                finally:
+                    self._restoring_iface = False
         self._update_ip_display()
     
     def _on_iface_changed(self, index):
@@ -671,6 +681,15 @@ class SettingsTab(QWidget):
         iface = self.iface_combo.currentData()
         if iface:
             self.interface_changed.emit(iface)
+            # BIND_IP follows the NIC (production DHCP fix — see
+            # core.config.sync_bind_ip): a GENUINE user selection
+            # change syncs the stored value immediately. Programmatic
+            # restores (startup load, refresh, control-tab push) skip
+            # the sync; the PTP start path covers those cases.
+            # Silent by design: sync_bind_ip only logs, no popup, and
+            # writes nothing when the stored value already matches.
+            if not self._restoring_iface:
+                sync_bind_ip(iface, self.inferno_config)
     
     def _on_ptp_version_toggled(self, button_id: int, checked: bool):
         """Handle PTP version radio button change."""
@@ -819,7 +838,11 @@ SystemCallFilter=@clock
         if saved_iface:
             idx = self.iface_combo.findData(saved_iface)
             if idx >= 0:
-                self.iface_combo.setCurrentIndex(idx)
+                self._restoring_iface = True
+                try:
+                    self.iface_combo.setCurrentIndex(idx)
+                finally:
+                    self._restoring_iface = False
         
         # Load PTP version
         ptp_ver = settings.value("ptp_version", "v2", type=str)
@@ -925,10 +948,18 @@ SystemCallFilter=@clock
         # Latency: ms display → integer ns storage.
         self.inferno_config.set('rx_latency_ns', _ms_to_ns(self.rx_latency.value()))
         self.inferno_config.set('tx_latency_ns', _ms_to_ns(self.tx_latency.value()))
+
+        # BIND_IP follows the NIC's current IP (production DHCP fix —
+        # see core.config.sync_bind_ip): synced before persisting, so
+        # the saved file always carries the selected interface's IP.
+        # sync_bind_ip rewrites on its own only when the stored value
+        # differs; the save below then persists everything in one go.
+        iface = self.iface_combo.currentData()
+        if iface:
+            sync_bind_ip(iface, self.inferno_config)
         self.inferno_config.save()
         
         # Save interface
-        iface = self.iface_combo.currentData()
         if iface:
             settings.setValue("selected_interface", iface)
         
@@ -1061,10 +1092,15 @@ SystemCallFilter=@clock
             self.save_settings()
 
     def set_interface(self, iface: str):
-        """Set interface from control tab."""
+        """Set interface from control tab (programmatic — must not
+        trigger a BIND_IP sync; the control tab's own paths cover it)."""
         idx = self.iface_combo.findData(iface)
         if idx >= 0:
-            self.iface_combo.setCurrentIndex(idx)
+            self._restoring_iface = True
+            try:
+                self.iface_combo.setCurrentIndex(idx)
+            finally:
+                self._restoring_iface = False
 
     def set_ptp_version(self, version: str):
         """Set PTP version from control tab."""

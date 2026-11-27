@@ -3,12 +3,15 @@
 Handles reading/writing inferno ALSA config (~/.asoundrc) and statime TOML configs.
 """
 
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Optional, Dict, Any
 import tomli
 import tomli_w
+
+logger = logging.getLogger(__name__)
 
 
 class InfernoConfigError(Exception):
@@ -288,6 +291,65 @@ def get_interface_ip(interface: str) -> Optional[str]:
     except Exception:
         pass
     return None
+
+
+def sync_bind_ip(interface: Optional[str],
+                 config: Optional[InfernoConfig] = None) -> bool:
+    """Keep BIND_IP in ~/.asoundrc pinned to the interface's current IP.
+
+    Production fix (user field report): after switching the NIC to
+    DHCP the interface got a new IP; the GUI displayed it correctly
+    (live read via get_interface_ip) but .asoundrc still held the old
+    static BIND_IP, so Dante never connected — re-selecting the NIC and
+    saving did not help because save_settings never derived bind_ip
+    from the interface.  bind_ip is a leftover from an era when the
+    settings tab had an explicit IP field; it now always follows the
+    selected NIC.
+
+    The helper lives in core/config.py (not the settings tab) because
+    it is called from both UI tabs:
+    - settings_tab.save_settings(), before persisting the config;
+    - the settings tab's genuine user interface-selection change
+      (programmatic restores are guarded there and stay silent);
+    - the control tab's PTP start, which covers a DHCP change that
+      happened while the GUI was closed (silent, log line only).
+
+    Behavior:
+    - no interface given -> nothing to sync, no write;
+    - interface has no usable IP -> keep the stored value, log a
+      warning, no write;
+    - current IP equals the stored BIND_IP -> no write;
+    - otherwise set the pending config's bind_ip, write the .asoundrc
+      and log "Updated BIND_IP in ~/.asoundrc: <old> -> <new>".  The
+      write goes through InfernoConfig.save(), so under sudo the file
+      (and its .bak) is handed back to the invoking user.
+
+    Returns True iff the .asoundrc was rewritten.
+    """
+    if not interface:
+        return False
+    if config is None:
+        config = InfernoConfig()
+        try:
+            config.load()
+        except InfernoConfigError as exc:
+            logger.warning(
+                "Could not parse %s (%s) — BIND_IP not synced",
+                config.config_path, exc)
+            return False
+    old_ip = config.bind_ip
+    new_ip = get_interface_ip(interface)
+    if not new_ip:
+        logger.warning(
+            "interface %s has no IP — keeping BIND_IP %s",
+            interface, old_ip)
+        return False
+    if new_ip == old_ip:
+        return False
+    config.set('bind_ip', new_ip)
+    config.save()
+    logger.info("Updated BIND_IP in ~/.asoundrc: %s -> %s", old_ip, new_ip)
+    return True
 
 
 def get_actual_user_home() -> Path:
