@@ -187,7 +187,10 @@ def test_save_writes_integer_ns_and_keeps_other_keys(
     assert 'SAMPLE_RATE "48000"' in content
     assert "TX_CHANNELS 24" in content
     assert "RX_CHANNELS 24" in content
-    assert 'BIND_IP "192.168.1.10"' in content
+    # BIND_IP follows the selected interface's current IP (production
+    # DHCP fix — see tests/test_bind_ip_sync.py): the fixture's stale
+    # 192.168.1.10 is replaced by the fake eth0's 10.0.0.1
+    assert 'BIND_IP "10.0.0.1"' in content, content
 
 
 def test_range_clamps_and_warning_tooltip(user_home, monkeypatch):

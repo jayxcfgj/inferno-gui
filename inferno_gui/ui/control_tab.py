@@ -19,6 +19,7 @@ from inferno_gui.core.config import (
     get_statime_binary,
     get_default_statime_config,
     get_work_dir,
+    sync_bind_ip,
 )
 from inferno_gui.core.discovery_kick import (
     DiscoveryKicker,
@@ -599,6 +600,18 @@ class ControlTab(QWidget):
 
         # Update config with selected interface
         self._update_statime_config(config_file, iface)
+
+        # BIND_IP follows the NIC (production DHCP fix — see
+        # core.config.sync_bind_ip): PTP start is the moment inferno
+        # begins using the network, so a stale stored BIND_IP (e.g. the
+        # NIC's IP changed via DHCP while the GUI was closed) is synced
+        # to the interface's current IP here. Silent by design: the
+        # sync logs the change, no popup. Defensive like the statime
+        # update above — a failed sync must not break the PTP start.
+        try:
+            sync_bind_ip(iface)
+        except Exception as e:
+            self._append_log(f"Warning: Could not sync BIND_IP: {e}")
 
         self.parser.reset_all()
         self.terminal_output.clear()

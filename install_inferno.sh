@@ -272,17 +272,18 @@ EOF
         exit 1
     fi
 
-    # Main menu
-    echo
-    echo "Select installation mode:"
-    echo "  1) Full installation (Inferno + Optional tools)"
-    echo "  2) Inferno only (skip optional tools)"
-    echo "  3) Optional tools only (skip Inferno - requires existing inferno setup)"
-    echo "  4) Custom selection"
+    # Main menu — displayed exactly once by prompt_select (the old
+    # hardcoded pre-echo duplicated the list and dropped the fifth
+    # option from it).
     echo
     local mode
-    mode=$(prompt_select "Choose installation mode:" "Full installation" "Inferno only" "Optional tools only" "Custom selection" "Cleanup only")
-
+    mode=$(prompt_select "Select installation mode:" \
+        "Full installation (Inferno + Optional tools)" \
+        "Inferno only (skip optional tools)" \
+        "Optional tools only (skip Inferno - requires existing inferno setup)" \
+        "Custom selection" \
+        "Cleanup only")
+    
     local install_inferno=false
     local install_optional=false
     local install_netaudio=false
@@ -292,7 +293,7 @@ EOF
     local install_cleanup=false
 
     case "$mode" in
-        "Full installation")
+        "Full installation (Inferno + Optional tools)")
             install_inferno=true
             install_optional=true
             install_netaudio=true
@@ -301,10 +302,10 @@ EOF
             install_gui=true
             install_cleanup=true
             ;;
-        "Inferno only")
+        "Inferno only (skip optional tools)")
             install_inferno=true
             ;;
-        "Optional tools only")
+        "Optional tools only (skip Inferno - requires existing inferno setup)")
             install_optional=true
             install_netaudio=true
             install_cable=true
@@ -312,6 +313,9 @@ EOF
             install_gui=true
             ;;
         "Custom selection")
+            # The component decisions are made HERE and only here —
+            # the step functions run purely on these flags and never
+            # re-ask (prompt dedupe; field report: asked twice).
             install_inferno=$(prompt_yes_no "Install Inferno (statime, inferno plugin, PipeWire config)?" "y" && echo "true" || echo "false")
             install_netaudio=$(prompt_yes_no "Install netaudio (Dante controller)?" "y" && echo "true" || echo "false")
             install_cable=$(prompt_yes_no "Install Cable (PipeWire GUI)?" "y" && echo "true" || echo "false")
@@ -393,7 +397,11 @@ EOF
     fi
 
     # Step 15: Optional - Inferno GUI
-    step_optional_gui
+    # The GUI decision was made up front (mode menu or custom y/n) —
+    # the step runs only when selected and never re-asks.
+    if [ "$install_gui" = "true" ]; then
+        step_optional_gui
+    fi
     log_success "Installation complete!"
     show_summary
 }
@@ -1226,12 +1234,10 @@ EOF
 
 step_optional_netaudio() {
     log_step "Step 12: Optional - netaudio (Dante Controller alternative)"
-    
-    if ! prompt_yes_no "Install netaudio for Dante network routing control?" "y"; then
-        log_info "Skipping netaudio installation"
-        return 0
-    fi
-    
+
+    # The install decision was made in main() (mode menu or custom
+    # y/n) — this step never re-asks it. Only secondary decisions
+    # (method, systemd service, browser) are prompted here.
     log_info "Fetching latest netaudio release..."
     local latest_version
     latest_version=$(fetch_latest_release "chris-ritsen/network-audio-controller")
@@ -1414,18 +1420,19 @@ step_optional_cable() {
     log_info "Cable is a graphical PipeWire patchbay/routing tool."
     log_info "Recommended installation: Download .deb package from GitHub releases"
     log_info "URL: https://github.com/magillos/Cable/releases"
-    
-    if prompt_yes_no "Download and install latest Cable .deb package now?" "n"; then
-        log_info "Fetching latest .deb download URL..."
-        local deb_url
-        deb_url=$(fetch_latest_asset_url "magillos/Cable" "\.deb$")
-        if [ -n "$deb_url" ]; then
-            log_info "Downloading: $deb_url"
-            run_cmd "cd /tmp && wget -q "$deb_url" -O cable_latest.deb && sudo dpkg -i cable_latest.deb"
-            log_success "Cable installed"
-        else
-            log_warn "Could not find .deb asset. Please download manually from releases page."
-        fi
+
+    # The install decision was made in main() (mode menu or custom
+    # y/n) — the .deb download is that decision's effect and is not
+    # re-asked here.
+    log_info "Fetching latest .deb download URL..."
+    local deb_url
+    deb_url=$(fetch_latest_asset_url "magillos/Cable" "\.deb$")
+    if [ -n "$deb_url" ]; then
+        log_info "Downloading: $deb_url"
+        run_cmd "cd /tmp && wget -q "$deb_url" -O cable_latest.deb && sudo dpkg -i cable_latest.deb"
+        log_success "Cable installed"
+    else
+        log_warn "Could not find .deb asset. Please download manually from releases page."
     fi
 }
 
@@ -1434,12 +1441,10 @@ step_optional_millisecond() {
     
     log_info "Millisecond helps tune your system for realtime/low-latency audio."
     log_info "GitHub: https://github.com/gaheldev/Millisecond"
-    
-    if ! prompt_yes_no "Install Millisecond?" "y"; then
-        log_info "Skipping Millisecond. Consider running it manually later for optimal performance."
-        return 0
-    fi
-    
+
+    # The install decision was made in main() (mode menu or custom
+    # y/n) — this step never re-asks it. "Run now?" below is a
+    # distinct action decision and keeps its own single prompt.
     log_step "Installing Millisecond dependencies"
     run_cmd_sudo "apt-get install -y meson ninja-build build-essential python3-all"
     run_cmd_sudo "apt-get install -y libgtk-4-dev libadwaita-1-dev python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 adwaita-icon-theme"
@@ -1466,24 +1471,43 @@ step_optional_millisecond() {
 
 step_optional_gui() {
     log_step "Step 15: Optional - Inferno GUI"
-    
-    if ! prompt_yes_no "Install Inferno GUI (PyQt6 control panel)?" "y"; then
-        log_info "Skipping Inferno GUI installation"
-        return 0
-    fi
-    
+
+    # The install decision was made in main() (mode menu or custom
+    # y/n) — this step never re-asks it.
+
     # Copy GUI source and project files to audio-inferno folder
     local gui_dest="$WORK_DIR/gui"
+    # GUI sources come from the installer's own directory (repo
+    # checkout). A user who downloaded ONLY this script from a GitHub
+    # release has no inferno_gui/ next to it: fall back to a shallow
+    # clone of the repository so the GUI step still completes
+    # (everything else in this script is cloned from external URLs
+    # too). The normal path (script inside a repo checkout) is
+    # unchanged: no clone, same copy commands.
+    local gui_src
+    if [ ! -d "$(dirname "$0")/inferno_gui" ]; then
+        log_info "GUI sources not found next to the installer — cloning inferno-gui repository..."
+        # Remove a stale clone from an earlier run so the clone is
+        # clean (same pattern as the statime/inferno clones in step 5).
+        if [ "$TEST_MODE" = false ] && [ -d "$WORK_DIR/inferno-gui-repo" ]; then
+            log_info "Removing existing inferno-gui-repo directory..."
+            rm -rf "$WORK_DIR/inferno-gui-repo"
+        fi
+        run_as_user "git clone --depth 1 https://github.com/jayxcfgj/inferno-gui \"$WORK_DIR/inferno-gui-repo\""
+        gui_src="$WORK_DIR/inferno-gui-repo"
+    else
+        gui_src="$(dirname "$0")"
+    fi
     log_info "Copying GUI source and project files to $gui_dest..."
     if [ "$TEST_MODE" = false ]; then
         rm -rf "$gui_dest"
         mkdir -p "$gui_dest"
         # Copy the inferno_gui package
-        cp -r "$(dirname "$0")/inferno_gui" "$gui_dest/"
+        cp -r "$gui_src/inferno_gui" "$gui_dest/"
         # Copy project files needed for pip install (pyproject.toml, README.md, LICENSE)
-        cp "$(dirname "$0")/pyproject.toml" "$gui_dest/"
-        cp "$(dirname "$0")/README.md" "$gui_dest/"
-        cp "$(dirname "$0")/LICENSE" "$gui_dest/"
+        cp "$gui_src/pyproject.toml" "$gui_dest/"
+        cp "$gui_src/README.md" "$gui_dest/"
+        cp "$gui_src/LICENSE" "$gui_dest/"
         chown -R "$SUDO_USER_VAL:$SUDO_USER_VAL" "$gui_dest" 2>/dev/null || true
     else
         log_info "[TEST MODE] Would copy GUI and project files to $gui_dest"
